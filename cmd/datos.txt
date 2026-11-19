@@ -1,0 +1,41 @@
+team_BTTS_1H_Overall_Europe Champions League.csv
+
+team_BTTS_1H_Overall_Germany Bundesliga.csv
+
+team_BTTS_1H_Overall_Spain LaLiga.csv
+
+team_BTTS_2H_Overall_Europe Champions League.csv
+
+team_BTTS_2H_Overall_Germany Bundesliga.csv
+
+team_BTTS_2H_Overall_Spain LaLiga.csv
+
+team_BTTS_FT_Away_Spain LaLiga.csv
+
+team_Corners_FT_Away_Europe Champions League.csv
+
+team_Corners_FT_Away_Germany Bundesliga.csv
+
+team_Corners_FT_Away_Spain LaLiga.csv
+
+team_Corners_FT_Home_Europe Champions League.csv
+
+team_Corners_FT_Home_Germany Bundesliga.csv
+
+team_Corners_FT_Home_Spain LaLiga.csv
+
+team_WDL_FT_Away_Germany Bundesliga.csv
+
+team_WDL_FT_Away_Spain LaLiga.csv
+
+team_WDL_FT_Home_Germany Bundesliga.csv
+
+team_WDL_FT_Home_Spain LaLiga.csv
+
+team_WDL_FT_Overall_Germany Bundesliga.csv
+
+team_WDL_FT_Overall_Spain LaLiga.csv
+
+team_XG _FT_Away_Europe Champions League.csv
+
+team_XG _FT_Home_Europe Champions League.csv

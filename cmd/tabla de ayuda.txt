@@ -1,0 +1,62 @@
+
+
+523	Francia BTTS 1H	fcd2635eb8
+526	Francia BTTS 2H	aa7f405fd6
+340	Premier BTTS 1H	a12d7213e7
+343     Premier BTTS 1H	37088ae740
+432	Bundesliga BTTS 1H	1e2ce8701f
+435	Bundesliga BTTS 2H	2623aabd9a
+477	Serie A BTTS 1H	999d472bff
+480	Serie A BTTS 2H	79a719fec6
+622	Champions BTTS 1H	7d8387ff02
+625	Champions BTTS 2H	f65cd1d141
+385     LaLiga    BTTS 1H       bd0e43f18c
+388     LaLiga    BTTS 2H       5978dd4abb
+85      Liga MX   BTTS 1H       e0c1acd46f
+85      Liga MX   BTTS 2H       2b24763a79
+85      Serie A Betano BTTS 1H  e0c1acd46f
+85      Serie A Betano BTTS 2H  2b24763a79
+
+----CORNESS-----
+602       Champions Corners 1H    1d09b71e74
+603       Champions Corners 2H    9b21d5c59a
+412       Germany Bundesliga 1H   14f5027af0
+413       Germany Bundesliga 2H   2978ba0566
+365       Spain LaLiga       1H   b95541a716
+366       Spain LaLiga       2H   2d2ff6a12f
+457       Italy Serie A      1H   1e141fb359
+458       Italy Serie A      2H   e60f4d5d5e
+320  England Premier League  1H   a7989a6395
+321  England Premier League  2H   066e72e8c4
+502       France Ligue 1     1H   f13bd6f709
+503       France Ligue 1     2H   5b93eb86f5
+44        Mexico Liga MX     1H   7a581de083
+46        Mexico Liga MX     2H   81758ab4a3
+44   Brazil Brazilian League 1H   7a581de083
+46   Brazil Brazilian League 2H   81758ab4a3
+
+------WDL-----
+---- ---  ----
+
+394     Germany Bundesliga   1H  fa304bd5be 
+395     Germany Bundesliga   2H  39d816fcf9
+347     Spain LaLiga         1H  0d9ea47f9e
+348     Spain LaLiga         2H  d5be7c3bf2
+439     Italy Seria A        1H  d978798fc5
+440     Italy Seria A        2H  e66fe7f649
+302  England Premier League  1H  31ceb505fa
+303  England Premier League  2H  26a316a22d
+484      France Ligue 1      1H  1dd026e7a1
+485      France Ligue 1      2H  69630bf4f1
+629  Europe Champions League 1H  3626f6c4f3
+630  Europe Champions League 2H  8e95db4464
+7    Brazil Brazilian League 1H  59c6d81885 
+9    Brazil Brazilian League 2H  9f4969aa5e
+7        Mexico Liga MX      1H  59c6d81885
+9        Mexico Liga MX      2H  9f4969aa5e
+
+-----xG------
+---- -  -----  
+
+862  Europe Champions League 1H  a22e236dd6
+863  Europe Champions League 2H  214c9c19aa

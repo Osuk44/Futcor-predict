@@ -1,0 +1,23 @@
+ligas := []string{
+    "Spain LaLiga",
+    "England Premier League",
+    "Germany Bundesliga",
+    "Italy Serie A",
+    "France Ligue 1",
+    "Brazil Brazilian League", --- aqui
+    "Mexico Liga MX",
+}
+
+
+# Estructura que te sugiero
+futcor_predict/
+├── cmd/
+│   ├── downloader/     # Script de descarga automática
+│   │   └── main.go
+│   └── predictor/      # Tu interfaz actual
+│       └── main_fyne.go
+├── data/
+│   ├── raw/           # JSON original de FootiQ
+│   └── processed/     # CSVs para tu predictor
+└── config/
+    └── tables.json    # Lista de tablas a descargar
