@@ -39,7 +39,7 @@ jobs:
       - name: Build APK
         run: |
           # La nueva sintaxis usa doble guion (--)
-          fyne package --os android --appID com.futcor.predictor --icon /usr/share/icons/hicolor/512x512/apps/fyne.png
+          fyne package --os android --appID com.futcor.predictor --icon icon.png
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
