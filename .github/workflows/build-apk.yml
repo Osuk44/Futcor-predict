@@ -34,13 +34,12 @@ jobs:
           sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
 
       - name: Install fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build APK
         run: |
-          # Compila el APK. Si tienes un icono propio en el repo, cámbialo:
-          # -icon icon.png
-          fyne package -os android -app-id com.futcor.predictor -icon /usr/share/icons/hicolor/512x512/apps/fyne.png
+          # La nueva sintaxis usa doble guion (--)
+          fyne package --os android --appID com.futcor.predictor --icon /usr/share/icons/hicolor/512x512/apps/fyne.png
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
