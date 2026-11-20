@@ -77,7 +77,7 @@ type FyneUI struct {
 	cacheMu sync.RWMutex
 }
 
-func NewFyneUI(predictor *models.Predictor) *FyneUI {
+func NewFyneUI(predictor *models.Predictor, dataDir string) *FyneUI {
 	myApp := app.NewWithID("com.futcor.predictor")
 	myApp.Settings().SetTheme(&DarkSoccerTheme{})
 	myWindow := myApp.NewWindow("Futbol Predictor")
@@ -87,7 +87,7 @@ func NewFyneUI(predictor *models.Predictor) *FyneUI {
 		Predictor: predictor,
 		App:       myApp,
 		Window:    myWindow,
-		DataDir:   dataDir, 
+		DataDir:   dataDir,
 	}
 }
 
