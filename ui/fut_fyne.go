@@ -38,7 +38,7 @@ type FyneUI struct {
 	Predictor *models.Predictor
 	Window    fyne.Window
 	App       fyne.App
-	DataDir   string 
+	DataDir   string
 
 	homeSelector *TeamSelector
 	awaySelector *TeamSelector
@@ -52,13 +52,15 @@ type FyneUI struct {
 	over95Label       *widget.Label
 	over105Label      *widget.Label
 
-	// Labels de 1X2
+	// Labels de 1X2 y xG
 	homeWinText *canvas.Text
 	drawText    *canvas.Text
 	awayWinText *canvas.Text
 	homeOdds    *widget.Label
 	drawOdds    *widget.Label
 	awayOdds    *widget.Label
+	homeXGLabel *widget.Label
+	awayXGLabel *widget.Label
 
 	// BTTS y Handicap
 	bttsResult     *widget.Label
@@ -119,9 +121,9 @@ func (f *FyneUI) buildMainUI() fyne.CanvasObject {
 	f.awaySelector.onSelected = func(t *models.Team) { f.onTeamSelected() }
 
 	// 2. Tarjeta superior
-	headerCard := f.buildHeaderCard()
+	headerCard := container.NewPadded(f.buildHeaderCard())
 
-	// 3. Pestañas (Abajo)
+	// 3. Pestañas (Abajo) usando íconos integrados de theme
 	tabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("1X2", theme.ConfirmIcon(), f.buildOutcomeTab()),
 		container.NewTabItemWithIcon("Corners", theme.GridIcon(), f.buildCornersTab()),
@@ -142,37 +144,48 @@ func (f *FyneUI) buildHeaderCard() fyne.CanvasObject {
 		f.handleSearch()
 	})
 
-	selectorGrid := container.NewGridWithColumns(3,
-		f.homeSelector.container,
-		container.NewCenter(swapBtn),
-		f.awaySelector.container,
+	selectorGrid := container.NewBorder(
+		nil,
+		nil,
+		nil,
+		nil,
+		container.NewGridWithColumns(3,
+			f.homeSelector.container,
+			container.NewCenter(swapBtn),
+			f.awaySelector.container,
+		),
 	)
 
 	importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
 		dialog.ShowInformation("Info", "Módulo de descarga en construcción...", f.Window)
 	})
 
-	content := container.NewVBox(
-		container.NewBorder(nil, nil, nil, importBtn, widget.NewLabelWithStyle("PARTIDO SELECCIONADO", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})),
+	titleLabel := widget.NewLabelWithStyle("PARTIDO", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleWithIcon := container.NewHBox(widget.NewIcon(theme.SearchIcon()), titleLabel)
+	headerTop := container.NewBorder(nil, nil, titleWithIcon, importBtn)
+
+	content := container.NewPadded(container.NewVBox(
+		headerTop,
+		widget.NewSeparator(),
 		selectorGrid,
-	)
+	))
 
 	return widget.NewCard("", "", content)
 }
 
 func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
 	f.homeWinText = canvas.NewText("0.0%", colorAccentGreen)
-	f.homeWinText.TextSize = 32
+	f.homeWinText.TextSize = 24
 	f.homeWinText.TextStyle = fyne.TextStyle{Bold: true}
 	f.homeWinText.Alignment = fyne.TextAlignCenter
 
 	f.drawText = canvas.NewText("0.0%", colorAccentGold)
-	f.drawText.TextSize = 32
+	f.drawText.TextSize = 24
 	f.drawText.TextStyle = fyne.TextStyle{Bold: true}
 	f.drawText.Alignment = fyne.TextAlignCenter
 
 	f.awayWinText = canvas.NewText("0.0%", colorAccentBlue)
-	f.awayWinText.TextSize = 32
+	f.awayWinText.TextSize = 24
 	f.awayWinText.TextStyle = fyne.TextStyle{Bold: true}
 	f.awayWinText.Alignment = fyne.TextAlignCenter
 
@@ -180,28 +193,66 @@ func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
 	f.drawOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
 	f.awayOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
 
-	cardHome := widget.NewCard("1 · LOCAL", "", container.NewVBox(container.NewCenter(f.homeWinText), f.homeOdds))
-	cardDraw := widget.NewCard("X · EMPATE", "", container.NewVBox(container.NewCenter(f.drawText), f.drawOdds))
-	cardAway := widget.NewCard("2 · VISITANTE", "", container.NewVBox(container.NewCenter(f.awayWinText), f.awayOdds))
+	homeTitle := widget.NewLabelWithStyle("1 · LOCAL", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	homeTitle.Wrapping = fyne.TextWrapWord
+	drawTitle := widget.NewLabelWithStyle("X · EMPATE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	drawTitle.Wrapping = fyne.TextWrapWord
+	awayTitle := widget.NewLabelWithStyle("2 · VISITANTE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	awayTitle.Wrapping = fyne.TextWrapWord
+
+	cardHome := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		homeTitle,
+		container.NewCenter(f.homeWinText),
+		f.homeOdds,
+	)))
+	cardDraw := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		drawTitle,
+		container.NewCenter(f.drawText),
+		f.drawOdds,
+	)))
+	cardAway := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		awayTitle,
+		container.NewCenter(f.awayWinText),
+		f.awayOdds,
+	)))
 
 	grid := container.NewGridWithColumns(3, cardHome, cardDraw, cardAway)
+
+	f.homeXGLabel = widget.NewLabelWithStyle("Local\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.homeXGLabel.Wrapping = fyne.TextWrapWord
+	f.awayXGLabel = widget.NewLabelWithStyle("Visitante\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.awayXGLabel.Wrapping = fyne.TextWrapWord
+
+	xgTitle := widget.NewLabelWithStyle("GOLES ESPERADOS (xG)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	xgCard := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		xgTitle,
+		widget.NewSeparator(),
+		container.NewGridWithColumns(2, f.homeXGLabel, f.awayXGLabel),
+	)))
 
 	calcBtn := widget.NewButtonWithIcon("Calcular 1X2", theme.ViewRefreshIcon(), func() {
 		f.updateOutcomeAsync()
 	})
 	calcBtn.Importance = widget.HighImportance
 
-	return container.NewVBox(grid, widget.NewSeparator(), calcBtn)
+	content := container.NewPadded(container.NewVBox(
+		grid,
+		xgCard,
+		widget.NewSeparator(),
+		calcBtn,
+	))
+
+	return container.NewVScroll(content)
 }
 
 func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
 	f.homeExpectedText = canvas.NewText("0.00", colorTextPrimary)
-	f.homeExpectedText.TextSize = 28
+	f.homeExpectedText.TextSize = 26
 	f.homeExpectedText.TextStyle = fyne.TextStyle{Bold: true}
 	f.homeExpectedText.Alignment = fyne.TextAlignCenter
 
 	f.awayExpectedText = canvas.NewText("0.00", colorTextPrimary)
-	f.awayExpectedText.TextSize = 28
+	f.awayExpectedText.TextSize = 26
 	f.awayExpectedText.TextStyle = fyne.TextStyle{Bold: true}
 	f.awayExpectedText.Alignment = fyne.TextAlignCenter
 
@@ -215,31 +266,59 @@ func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
 	f.over95Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	f.over105Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
-	cardHome := widget.NewCard("LOCAL", "Corners esperados", container.NewCenter(f.homeExpectedText))
-	cardAway := widget.NewCard("VISITANTE", "Corners esperados", container.NewCenter(f.awayExpectedText))
+	homeTitle := widget.NewLabelWithStyle("LOCAL", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	homeSub := widget.NewLabelWithStyle("Corners esperados", fyne.TextAlignCenter, fyne.TextStyle{})
+	homeSub.Wrapping = fyne.TextWrapWord
+
+	awayTitle := widget.NewLabelWithStyle("VISITANTE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	awaySub := widget.NewLabelWithStyle("Corners esperados", fyne.TextAlignCenter, fyne.TextStyle{})
+	awaySub.Wrapping = fyne.TextWrapWord
+
+	cardHome := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		homeTitle,
+		homeSub,
+		container.NewCenter(f.homeExpectedText),
+	)))
+	cardAway := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		awayTitle,
+		awaySub,
+		container.NewCenter(f.awayExpectedText),
+	)))
 	gridEquipos := container.NewGridWithColumns(2, cardHome, cardAway)
 
+	totalTitle := widget.NewLabelWithStyle("TOTAL DEL PARTIDO", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	totalSub := widget.NewLabelWithStyle("Corners totales esperados", fyne.TextAlignCenter, fyne.TextStyle{})
+	totalCard := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		totalTitle,
+		totalSub,
+		container.NewCenter(f.totalExpectedText),
+	)))
+
+	overTitle := widget.NewLabelWithStyle("PROBABILIDAD OVER", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	gridProbs := container.NewGridWithColumns(4,
 		container.NewVBox(widget.NewLabelWithStyle("+7.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over75Label),
 		container.NewVBox(widget.NewLabelWithStyle("+8.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over85Label),
 		container.NewVBox(widget.NewLabelWithStyle("+9.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over95Label),
 		container.NewVBox(widget.NewLabelWithStyle("+10.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over105Label),
 	)
+	overCard := widget.NewCard("", "", container.NewPadded(container.NewVBox(
+		overTitle,
+		widget.NewSeparator(),
+		gridProbs,
+	)))
 
 	calcBtn := widget.NewButtonWithIcon("Calcular", theme.ViewRefreshIcon(), func() {
 		f.updateCornersAsync()
 	})
 	calcBtn.Importance = widget.HighImportance
 
-	content := container.NewVBox(
+	content := container.NewPadded(container.NewVBox(
 		gridEquipos,
-		widget.NewCard("TOTAL DEL PARTIDO", "Corners totales esperados", container.NewCenter(f.totalExpectedText)),
-		widget.NewSeparator(),
-		widget.NewLabelWithStyle("PROBABILIDAD OVER", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		gridProbs,
+		totalCard,
+		overCard,
 		widget.NewSeparator(),
 		calcBtn,
-	)
+	))
 
 	return container.NewVScroll(content)
 }
@@ -247,11 +326,30 @@ func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
 func (f *FyneUI) buildBTTSTab() fyne.CanvasObject {
 	f.bttsResult = widget.NewLabel("Selecciona equipos para predecir BTTS")
 	f.bttsResult.Wrapping = fyne.TextWrapWord
+
+	resultCard := widget.NewCard(
+		"AMBOS MARCAN (BTTS)",
+		"Probabilidad y cuotas justas",
+		container.NewPadded(f.bttsResult),
+	)
+
 	calcBtn := widget.NewButtonWithIcon("Calcular BTTS", theme.ViewRefreshIcon(), func() {
 		f.updateBTTSAsync()
 	})
 	calcBtn.Importance = widget.HighImportance
-	return container.NewBorder(nil, container.NewVBox(widget.NewSeparator(), calcBtn), nil, nil, container.NewVScroll(f.bttsResult))
+
+	bottomBar := container.NewPadded(container.NewVBox(
+		widget.NewSeparator(),
+		calcBtn,
+	))
+
+	return container.NewBorder(
+		nil,
+		bottomBar,
+		nil,
+		nil,
+		container.NewVScroll(container.NewPadded(resultCard)),
+	)
 }
 
 func (f *FyneUI) buildHandicapTab() fyne.CanvasObject {
@@ -259,12 +357,36 @@ func (f *FyneUI) buildHandicapTab() fyne.CanvasObject {
 	f.handicapResult.Wrapping = fyne.TextWrapWord
 	f.handicapEntry = widget.NewEntry()
 	f.handicapEntry.SetText("-0.5")
+
+	topInput := container.NewPadded(container.NewVBox(
+		widget.NewLabelWithStyle("Handicap Asiático:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		f.handicapEntry,
+	))
+
+	resultCard := widget.NewCard(
+		"HANDICAP",
+		"Probabilidad de cobertura",
+		container.NewPadded(f.handicapResult),
+	)
+
 	calcBtn := widget.NewButtonWithIcon("Calcular Handicap", theme.ViewRefreshIcon(), func() {
 		h, _ := strconv.ParseFloat(f.handicapEntry.Text, 64)
 		f.updateHandicapAsync(h)
 	})
 	calcBtn.Importance = widget.HighImportance
-	return container.NewBorder(container.NewVBox(widget.NewLabel("Handicap:"), f.handicapEntry), container.NewVBox(widget.NewSeparator(), calcBtn), nil, nil, container.NewVScroll(f.handicapResult))
+
+	bottomBar := container.NewPadded(container.NewVBox(
+		widget.NewSeparator(),
+		calcBtn,
+	))
+
+	return container.NewBorder(
+		topInput,
+		bottomBar,
+		nil,
+		nil,
+		container.NewVScroll(container.NewPadded(resultCard)),
+	)
 }
 
 // --- LÓGICA DE SELECCIÓN Y CÁLCULOS ---
@@ -274,11 +396,17 @@ func (f *FyneUI) createTeamSelector(placeholder string, isHome bool) *TeamSelect
 	ts.entry = widget.NewEntry()
 	ts.entry.SetPlaceHolder(placeholder)
 	ts.select_ = widget.NewSelect([]string{}, func(selected string) {
-		if selected == "" { return }
+		if selected == "" {
+			return
+		}
 		for _, team := range f.Predictor.Teams {
 			if team.Name == selected {
 				ts.entry.SetText(selected)
-				if isHome { f.setTeams(team, f.currentAway) } else { f.setTeams(f.currentHome, team) }
+				if isHome {
+					f.setTeams(team, f.currentAway)
+				} else {
+					f.setTeams(f.currentHome, team)
+				}
 				ts.onSelected(team)
 				break
 			}
@@ -293,8 +421,14 @@ func (f *FyneUI) createTeamSelector(placeholder string, isHome bool) *TeamSelect
 
 	var lastSearch string
 	ts.entry.OnChanged = func(text string) {
-		if len(text) < 2 { ts.select_.Hide(); ts.select_.Options = []string{}; return }
-		if text == lastSearch { return }
+		if len(text) < 2 {
+			ts.select_.Hide()
+			ts.select_.Options = []string{}
+			return
+		}
+		if text == lastSearch {
+			return
+		}
 		lastSearch = text
 		var matches []string
 		for _, team := range f.Predictor.Teams {
@@ -306,7 +440,9 @@ func (f *FyneUI) createTeamSelector(placeholder string, isHome bool) *TeamSelect
 			ts.select_.Options = matches
 			ts.select_.Refresh()
 			ts.select_.Show()
-		} else { ts.select_.Hide() }
+		} else {
+			ts.select_.Hide()
+		}
 	}
 	return ts
 }
@@ -322,11 +458,17 @@ func (f *FyneUI) onTeamSelected() {
 
 func (f *FyneUI) handleSearch() {
 	homeText, awayText := f.homeSelector.entry.Text, f.awaySelector.entry.Text
-	if homeText == "" || awayText == "" { return }
+	if homeText == "" || awayText == "" {
+		return
+	}
 	var home, away *models.Team
 	for _, team := range f.Predictor.Teams {
-		if strings.EqualFold(team.Name, homeText) { home = team }
-		if strings.EqualFold(team.Name, awayText) { away = team }
+		if strings.EqualFold(team.Name, homeText) {
+			home = team
+		}
+		if strings.EqualFold(team.Name, awayText) {
+			away = team
+		}
 	}
 	if home != nil && away != nil {
 		f.setTeams(home, away)
@@ -336,25 +478,35 @@ func (f *FyneUI) handleSearch() {
 
 func (f *FyneUI) updateOutcomeAsync() {
 	home, away := f.getTeams()
-	if home == nil || away == nil { return }
+	if home == nil || away == nil {
+		return
+	}
 	go func() {
 		outcome := f.Predictor.PredictOutcome(home, away)
+		homeXG, awayXG := calculateExpectedGoalsForDisplay(home, away)
 		fyne.Do(func() {
 			f.homeWinText.Text = fmt.Sprintf("%.1f%%", outcome.HomeWinProb*100)
 			f.drawText.Text = fmt.Sprintf("%.1f%%", outcome.DrawProb*100)
 			f.awayWinText.Text = fmt.Sprintf("%.1f%%", outcome.AwayWinProb*100)
-			f.homeWinText.Refresh(); f.drawText.Refresh(); f.awayWinText.Refresh()
+			f.homeWinText.Refresh()
+			f.drawText.Refresh()
+			f.awayWinText.Refresh()
 
 			f.homeOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.HomeOdds))
 			f.drawOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.DrawOdds))
 			f.awayOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.AwayOdds))
+
+			f.homeXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", home.Name, homeXG))
+			f.awayXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", away.Name, awayXG))
 		})
 	}()
 }
 
 func (f *FyneUI) updateCornersAsync() {
 	home, away := f.getTeams()
-	if home == nil || away == nil { return }
+	if home == nil || away == nil {
+		return
+	}
 	go func() {
 		pred := f.Predictor.CalculateCornerExpectation(home, away)
 		fyne.Do(func() {
@@ -367,13 +519,13 @@ func (f *FyneUI) displayCornersResult(pred *models.CornerPrediction, home, away 
 	f.homeExpectedText.Text = fmt.Sprintf("%.2f", pred.HomeExpected)
 	f.awayExpectedText.Text = fmt.Sprintf("%.2f", pred.AwayExpected)
 	f.totalExpectedText.Text = fmt.Sprintf("%.2f", pred.TotalExpected)
-	
+
 	if pred.TotalExpected > 10.5 {
 		f.totalExpectedText.Color = colorAccentGreen
 	} else {
 		f.totalExpectedText.Color = colorTextPrimary
 	}
-	
+
 	f.homeExpectedText.Refresh()
 	f.awayExpectedText.Refresh()
 	f.totalExpectedText.Refresh()
@@ -386,7 +538,9 @@ func (f *FyneUI) displayCornersResult(pred *models.CornerPrediction, home, away 
 
 func (f *FyneUI) updateBTTSAsync() {
 	home, away := f.getTeams()
-	if home == nil || away == nil { return }
+	if home == nil || away == nil {
+		return
+	}
 	go func() {
 		pred := f.Predictor.CalculateBTTSProbability(home, away)
 		fyne.Do(func() {
@@ -397,11 +551,88 @@ func (f *FyneUI) updateBTTSAsync() {
 
 func (f *FyneUI) updateHandicapAsync(h float64) {
 	home, away := f.getTeams()
-	if home == nil || away == nil { return }
+	if home == nil || away == nil {
+		return
+	}
 	go func() {
 		pred := f.Predictor.CalculateHandicap(home, away, h)
 		fyne.Do(func() {
 			f.handicapResult.SetText(fmt.Sprintf("Local cubre: %.1f%%\nVisitante cubre: %.1f%%\nDiferencia: %.2f", pred.HomeProb*100, pred.AwayProb*100, pred.ExpectedValue))
 		})
 	}()
+}
+
+// calculateExpectedGoalsForDisplay calcula los xG esperados para mostrar en la pestaña 1X2
+// usando únicamente campos exportados de models.Team sin alterar models/fut.go.
+func calculateExpectedGoalsForDisplay(home, away *models.Team) (float64, float64) {
+	homeXGFor := home.XGForHome
+	homeXGAgainst := home.XGAgainstHome
+	homeFinDelta := home.FinishingDeltaHome
+
+	awayXGFor := away.XGForAway
+	awayXGAgainst := away.XGAgainstAway
+	awayFinDelta := away.FinishingDeltaAway
+
+	if homeXGFor == 0 {
+		homeXGFor = home.GoalsForAvg * 0.85
+	}
+	if awayXGFor == 0 {
+		awayXGFor = away.GoalsForAvg * 0.85
+	}
+	if homeXGAgainst == 0 {
+		homeXGAgainst = home.GoalsAgainstAvg * 0.85
+	}
+	if awayXGAgainst == 0 {
+		awayXGAgainst = away.GoalsAgainstAvg * 0.85
+	}
+
+	isChampions := home.Competition == "Champions" && away.Competition == "Champions"
+	homeLocalFactor := 1.1
+	awayAwayFactor := 0.95
+	if isChampions {
+		homeLocalFactor = 1.05
+		awayAwayFactor = 0.98
+		homeXGFor *= 1.08
+		awayXGFor *= 1.08
+	}
+
+	avgXG := 1.35
+	if home.Competition == "Champions" {
+		avgXG = 1.50
+	} else {
+		leagueAvg := map[string]float64{
+			"LaLiga":           1.35,
+			"Premier League":   1.45,
+			"Bundesliga":       1.40,
+			"Serie A":          1.30,
+			"Ligue 1":          1.25,
+			"Champions League": 1.50,
+		}
+		if val, ok := leagueAvg[home.League]; ok {
+			avgXG = val
+		}
+	}
+
+	homeDefQuality := homeXGAgainst / avgXG
+	awayDefQuality := awayXGAgainst / avgXG
+
+	homeOffEfficiency := 1.0
+	if homeFinDelta > 0.3 {
+		homeOffEfficiency = 0.95
+	} else if homeFinDelta < -0.3 {
+		homeOffEfficiency = 1.05
+	}
+	awayOffEfficiency := 1.0
+	if awayFinDelta > 0.3 {
+		awayOffEfficiency = 0.95
+	} else if awayFinDelta < -0.3 {
+		awayOffEfficiency = 1.05
+	}
+
+	strengthFactor := 1.0 + (home.PowerRating-away.PowerRating)/200
+
+	homeExpected := homeXGFor * homeOffEfficiency * strengthFactor * homeLocalFactor * awayDefQuality
+	awayExpected := awayXGFor * awayOffEfficiency * (1 / strengthFactor) * awayAwayFactor * homeDefQuality
+
+	return homeExpected, awayExpected
 }
