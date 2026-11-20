@@ -175,17 +175,17 @@ func (f *FyneUI) buildHeaderCard() fyne.CanvasObject {
 
 func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
 	f.homeWinText = canvas.NewText("0.0%", colorAccentGreen)
-	f.homeWinText.TextSize = 24
+	f.homeWinText.TextSize = 32
 	f.homeWinText.TextStyle = fyne.TextStyle{Bold: true}
 	f.homeWinText.Alignment = fyne.TextAlignCenter
 
 	f.drawText = canvas.NewText("0.0%", colorAccentGold)
-	f.drawText.TextSize = 24
+	f.drawText.TextSize = 32
 	f.drawText.TextStyle = fyne.TextStyle{Bold: true}
 	f.drawText.Alignment = fyne.TextAlignCenter
 
 	f.awayWinText = canvas.NewText("0.0%", colorAccentBlue)
-	f.awayWinText.TextSize = 24
+	f.awayWinText.TextSize = 32
 	f.awayWinText.TextStyle = fyne.TextStyle{Bold: true}
 	f.awayWinText.Alignment = fyne.TextAlignCenter
 
@@ -193,34 +193,42 @@ func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
 	f.drawOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
 	f.awayOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
 
-	homeTitle := widget.NewLabelWithStyle("1 · LOCAL", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	homeTitle.Wrapping = fyne.TextWrapWord
-	drawTitle := widget.NewLabelWithStyle("X · EMPATE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	drawTitle.Wrapping = fyne.TextWrapWord
-	awayTitle := widget.NewLabelWithStyle("2 · VISITANTE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	awayTitle.Wrapping = fyne.TextWrapWord
+	homeTitle := canvas.NewText("1 · LOCAL", colorTextPrimary)
+	homeTitle.TextSize = 13
+	homeTitle.TextStyle = fyne.TextStyle{Bold: true}
+	homeTitle.Alignment = fyne.TextAlignCenter
 
-	cardHome := widget.NewCard("", "", container.NewPadded(container.NewVBox(
-		homeTitle,
+	drawTitle := canvas.NewText("X · EMPATE", colorTextPrimary)
+	drawTitle.TextSize = 13
+	drawTitle.TextStyle = fyne.TextStyle{Bold: true}
+	drawTitle.Alignment = fyne.TextAlignCenter
+
+	awayTitle := canvas.NewText("2 · VISITANTE", colorTextPrimary)
+	awayTitle.TextSize = 13
+	awayTitle.TextStyle = fyne.TextStyle{Bold: true}
+	awayTitle.Alignment = fyne.TextAlignCenter
+
+	cardHome := widget.NewCard("", "", container.NewVBox(
+		container.NewCenter(homeTitle),
 		container.NewCenter(f.homeWinText),
 		f.homeOdds,
-	)))
-	cardDraw := widget.NewCard("", "", container.NewPadded(container.NewVBox(
-		drawTitle,
+	))
+	cardDraw := widget.NewCard("", "", container.NewVBox(
+		container.NewCenter(drawTitle),
 		container.NewCenter(f.drawText),
 		f.drawOdds,
-	)))
-	cardAway := widget.NewCard("", "", container.NewPadded(container.NewVBox(
-		awayTitle,
+	))
+	cardAway := widget.NewCard("", "", container.NewVBox(
+		container.NewCenter(awayTitle),
 		container.NewCenter(f.awayWinText),
 		f.awayOdds,
-	)))
+	))
 
 	grid := container.NewGridWithColumns(3, cardHome, cardDraw, cardAway)
 
-	f.homeXGLabel = widget.NewLabelWithStyle("Local\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.homeXGLabel = widget.NewLabelWithStyle("Local\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{})
 	f.homeXGLabel.Wrapping = fyne.TextWrapWord
-	f.awayXGLabel = widget.NewLabelWithStyle("Visitante\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.awayXGLabel = widget.NewLabelWithStyle("Visitante\n0.00 xG", fyne.TextAlignCenter, fyne.TextStyle{})
 	f.awayXGLabel.Wrapping = fyne.TextWrapWord
 
 	xgTitle := widget.NewLabelWithStyle("GOLES ESPERADOS (xG)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
