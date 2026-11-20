@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # Te permite ejecutarlo manualmente desde GitHub
+  workflow_dispatch:
 
 jobs:
   build:
@@ -24,7 +24,9 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Install Fyne dependencies
         run: |
@@ -36,7 +38,8 @@ jobs:
 
       - name: Build APK
         run: |
-          # Compilamos el APK para Android (Ajusta el icono si no tienes uno)
+          # Compila el APK. Si tienes un icono propio en el repo, cámbialo:
+          # -icon icon.png
           fyne package -os android -app-id com.futcor.predictor -icon /usr/share/icons/hicolor/512x512/apps/fyne.png
 
       - name: Upload APK Artifact
