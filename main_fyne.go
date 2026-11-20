@@ -5,19 +5,48 @@ import (
 	"futcor_predict/models"
 	"futcor_predict/ui"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime" // Importante para detectar Android
 	"time"
 )
 
+func resolveDataDir() string {
+	// 1. Si estamos en Android, usar la ruta absoluta (requiere MANAGE_EXTERNAL_STORAGE)
+	if runtime.GOOS == "android" {
+		ruta := "/storage/emulated/0/futcor/data"
+		// Asegurarnos de que la carpeta existe
+		if err := os.MkdirAll(ruta, 0755); err != nil {
+			log.Printf("⚠️ No se pudo crear la carpeta en Android: %v", err)
+		}
+		return ruta
+	}
+
+	// 2. Si estamos en PC (Windows/Linux/Mac)
+	if info, err := os.Stat("data"); err == nil && info.IsDir() {
+		return "data"
+	}
+	
+	// 3. Si no, buscar al lado del ejecutable
+	if exePath, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exePath), "data")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	
+	return "data"
+}
+
 func main() {
-	// Crear predictor
 	predictor := models.NewPredictor()
+	dataDir := resolveDataDir()
 
-	// Mostrar indicador de carga
 	fmt.Println("🚀 Iniciando Futbol Predictor...")
-	fmt.Println("📊 Cargando datos de equipos...")
+	fmt.Println("📂 Usando directorio de datos:", dataDir)
 
-	// Cargar equipos base (UNA SOLA VEZ)
-	err := predictor.LoadTeamsFromCSV("data/equipos.csv")
+	// 1. Cargar equipos base
+	err := predictor.LoadTeamsFromCSV(filepath.Join(dataDir, "equipos.csv"))
 	if err != nil {
 		log.Printf("⚠️ Advertencia: No se pudieron cargar los equipos: %v", err)
 		log.Println("📋 Usando datos de ejemplo...")
@@ -26,7 +55,7 @@ func main() {
 		fmt.Printf("✅ %d equipos cargados\n", len(predictor.Teams))
 	}
 
-	// Cargar BTTS y WDL de todas las ligas
+	// 2. Cargar estadísticas por liga
 	ligas := []string{
 		"Spain LaLiga",
 		"England Premier League",
@@ -40,97 +69,32 @@ func main() {
 	fmt.Println("📈 Cargando estadísticas de ligas...")
 
 	for _, liga := range ligas {
-		// Intentar cargar BTTS (si los archivos existen)
-		if err := predictor.LoadBTTSData(fmt.Sprintf("data/team_BTTS_1H_Overall_%s.csv", liga), "1H"); err == nil {
-			fmt.Printf("  ✓ BTTS 1H %s\n", liga)
-		}
-		if err := predictor.LoadBTTSData(fmt.Sprintf("data/team_BTTS_2H_Overall_%s.csv", liga), "2H"); err == nil {
-			fmt.Printf("  ✓ BTTS 2H %s\n", liga)
-		}
-		
-		// Cargar xG separado para cada liga
-for _, liga := range ligas {
-    predictor.LoadXGSeparatedData(
-        fmt.Sprintf("data/team_xG_FT_Home_%s.csv", liga),
-        fmt.Sprintf("data/team_xG_FT_Away_%s.csv", liga),
-    )
-}
+		predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_1H_Overall_%s.csv", liga)), "1H")
+		predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_2H_Overall_%s.csv", liga)), "2H")
 
-		// Intentar cargar WDL (si los archivos existen)
-		if err := predictor.LoadWDLData(fmt.Sprintf("data/team_WDL_FT_Home_%s.csv", liga), "home"); err == nil {
-			fmt.Printf("  ✓ WDL Home %s\n", liga)
-		}
-		if err := predictor.LoadWDLData(fmt.Sprintf("data/team_WDL_FT_Away_%s.csv", liga), "away"); err == nil {
-			fmt.Printf("  ✓ WDL Away %s\n", liga)
-		}
+		predictor.LoadXGSeparatedData(
+			filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Home_%s.csv", liga)),
+			filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Away_%s.csv", liga)),
+		)
+
+		predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Home_%s.csv", liga)), "home")
+		predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Away_%s.csv", liga)), "away")
 	}
 
-	// Cargar datos de corners (específicos de LaLiga por ahora)
+	// 3. Cargar corners
 	fmt.Println("📐 Cargando estadísticas de corners...")
-
-	if err := predictor.LoadCornersData("data/team_Corners_FT_Home_Spain LaLiga.csv", "home"); err == nil {
-		fmt.Println("  ✓ Corners Home LaLiga")
-	}
-	if err := predictor.LoadCornersData("data/team_Corners_FT_Away_Spain LaLiga.csv", "away"); err == nil {
-		fmt.Println("  ✓ Corners Away LaLiga")
-	}
+	predictor.LoadCornersData(filepath.Join(dataDir, "team_Corners_FT_Home_Spain LaLiga.csv"), "home")
+	predictor.LoadCornersData(filepath.Join(dataDir, "team_Corners_FT_Away_Spain LaLiga.csv"), "away")
 
 	fmt.Println("✨ Iniciando interfaz gráfica...")
-	time.Sleep(1 * time.Second) // Pequeña pausa para leer los mensajes
+	time.Sleep(300 * time.Millisecond)
 
-	// Iniciar interfaz FYNE
-	fyneUI := ui.NewFyneUI(predictor)
+	// PASAMOS EL dataDir A LA INTERFAZ
+	fyneUI := ui.NewFyneUI(predictor, dataDir)
 	fyneUI.Run()
 }
 
-// createSampleData crea datos de ejemplo si no hay CSV
 func createSampleData(predictor *models.Predictor) {
-	teams := []*models.Team{
-		{
-			ID:                "RMA",
-			Name:              "Real Madrid",
-			League:            "LaLiga",
-			PowerRating:       95.0,
-			GAx:               2.1,
-			GSAx:              0.8,
-			Style:             "BANDA",
-			AvgCornersFor:     6.5,
-			AvgCornersAgainst: 3.2,
-			BTTSRate:          0.65,
-			GoalsForAvg:       2.2,
-			GoalsAgainstAvg:   0.9,
-		},
-		{
-			ID:                "BAR",
-			Name:              "Barcelona",
-			League:            "LaLiga",
-			PowerRating:       92.0,
-			GAx:               2.0,
-			GSAx:              0.9,
-			Style:             "CENTRO",
-			AvgCornersFor:     5.8,
-			AvgCornersAgainst: 3.5,
-			BTTSRate:          0.60,
-			GoalsForAvg:       2.0,
-			GoalsAgainstAvg:   1.0,
-		},
-		{
-			ID:                "MCI",
-			Name:              "Manchester City",
-			League:            "Premier",
-			PowerRating:       96.0,
-			GAx:               2.3,
-			GSAx:              0.7,
-			Style:             "MIXTO",
-			AvgCornersFor:     7.2,
-			AvgCornersAgainst: 2.8,
-			BTTSRate:          0.70,
-			GoalsForAvg:       2.4,
-			GoalsAgainstAvg:   0.8,
-		},
-	}
-
-	for _, team := range teams {
-		predictor.Teams[team.ID] = team
-	}
+	// ... (deja tu función createSampleData exactamente como estaba) ...
+	// Si no la tienes a mano, puedo volver a pasártela, pero es la misma de antes.
 }

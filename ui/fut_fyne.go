@@ -13,23 +13,20 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-// predictionCache almacena predicciones para evitar recálculos
 type predictionCache struct {
 	Home      *models.Team
 	Away      *models.Team
 	Corners   *models.CornerPrediction
 	BTTS      *models.BTTSPrediction
-	Handicap  *models.HandicapPrediction
+	Outcome   *models.OutcomePrediction
 	Timestamp time.Time
 }
 
-// TeamSelector componente personalizado para selección de equipos
 type TeamSelector struct {
 	entry      *widget.Entry
 	select_    *widget.Select
@@ -37,68 +34,68 @@ type TeamSelector struct {
 	onSelected func(team *models.Team)
 }
 
-// FyneUI estructura principal de la interfaz gráfica
 type FyneUI struct {
 	Predictor *models.Predictor
 	Window    fyne.Window
 	App       fyne.App
+	DataDir   string 
 
-	// Componentes UI personalizados
-	homeSelector   *TeamSelector
-	awaySelector   *TeamSelector
-	resultText     *widget.Label
+	homeSelector *TeamSelector
+	awaySelector *TeamSelector
+
+	// Labels de Córners
+	homeExpectedText  *canvas.Text
+	awayExpectedText  *canvas.Text
+	totalExpectedText *canvas.Text
+	over75Label       *widget.Label
+	over85Label       *widget.Label
+	over95Label       *widget.Label
+	over105Label      *widget.Label
+
+	// Labels de 1X2
+	homeWinText *canvas.Text
+	drawText    *canvas.Text
+	awayWinText *canvas.Text
+	homeOdds    *widget.Label
+	drawOdds    *widget.Label
+	awayOdds    *widget.Label
+
+	// BTTS y Handicap
 	bttsResult     *widget.Label
 	handicapResult *widget.Label
-	kellyResult    *widget.Label
-	oddsEntry      *widget.Entry
-	probBinding    binding.Float
 	handicapEntry  *widget.Entry
 
-	// Estado protegido con mutex
 	mu          sync.RWMutex
 	currentHome *models.Team
 	currentAway *models.Team
 
-	// Control de concurrencia
 	calcCtx    context.Context
 	calcCancel context.CancelFunc
 	calcMu     sync.Mutex
 
-	// Caché
 	cache   *predictionCache
 	cacheMu sync.RWMutex
-
-	// Gráficos
-	cornersChart *widget.Label
 }
 
-// NewFyneUI crea una nueva interfaz gráfica
 func NewFyneUI(predictor *models.Predictor) *FyneUI {
 	myApp := app.NewWithID("com.futcor.predictor")
-
-	// ← APLICAR TEMA PERSONALIZADO (automático, afecta toda la app)
 	myApp.Settings().SetTheme(&DarkSoccerTheme{})
-
-	myWindow := myApp.NewWindow("⚽ Futbol Predictor - Modelo Avanzado")
-	myWindow.Resize(fyne.NewSize(900, 700))
-	myWindow.CenterOnScreen()
+	myWindow := myApp.NewWindow("Futbol Predictor")
+	myWindow.Resize(fyne.NewSize(400, 800)) // Tamaño vertical para móvil
 
 	return &FyneUI{
-		Predictor:   predictor,
-		App:         myApp,
-		Window:      myWindow,
-		probBinding: binding.NewFloat(),
+		Predictor: predictor,
+		App:       myApp,
+		Window:    myWindow,
+		DataDir:   dataDir, 
 	}
 }
 
-// Run inicia la interfaz gráfica
 func (f *FyneUI) Run() {
-	f.probBinding.Set(0.5)
 	f.Window.SetContent(f.buildMainUI())
 	f.Window.ShowAndRun()
 }
 
-// Métodos thread-safe para acceder al estado
 func (f *FyneUI) getTeams() (*models.Team, *models.Team) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -112,752 +109,299 @@ func (f *FyneUI) setTeams(home, away *models.Team) {
 	f.currentAway = away
 }
 
-// cancelCurrentCalculation cancela cualquier cálculo en progreso
-func (f *FyneUI) cancelCurrentCalculation() {
-	f.calcMu.Lock()
-	defer f.calcMu.Unlock()
-	if f.calcCancel != nil {
-		f.calcCancel()
-	}
-	f.calcCtx, f.calcCancel = context.WithCancel(context.Background())
+// --- CONSTRUCCIÓN DE LA UI ---
+
+func (f *FyneUI) buildMainUI() fyne.CanvasObject {
+	// 1. Selectores de equipo
+	f.homeSelector = f.createTeamSelector("Local", true)
+	f.homeSelector.onSelected = func(t *models.Team) { f.onTeamSelected() }
+	f.awaySelector = f.createTeamSelector("Visitante", false)
+	f.awaySelector.onSelected = func(t *models.Team) { f.onTeamSelected() }
+
+	// 2. Tarjeta superior
+	headerCard := f.buildHeaderCard()
+
+	// 3. Pestañas (Abajo)
+	tabs := container.NewAppTabs(
+		container.NewTabItemWithIcon("1X2", theme.ConfirmIcon(), f.buildOutcomeTab()),
+		container.NewTabItemWithIcon("Corners", theme.GridIcon(), f.buildCornersTab()),
+		container.NewTabItemWithIcon("BTTS", theme.InfoIcon(), f.buildBTTSTab()),
+		container.NewTabItemWithIcon("Handicap", theme.MenuIcon(), f.buildHandicapTab()),
+	)
+	tabs.SetTabLocation(container.TabLocationBottom)
+
+	return container.NewBorder(headerCard, nil, nil, nil, tabs)
 }
 
-// createTeamSelector crea un selector de equipo híbrido (Entry + Select)
+func (f *FyneUI) buildHeaderCard() fyne.CanvasObject {
+	swapBtn := widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() {
+		h := f.homeSelector.entry.Text
+		a := f.awaySelector.entry.Text
+		f.homeSelector.entry.SetText(a)
+		f.awaySelector.entry.SetText(h)
+		f.handleSearch()
+	})
+
+	selectorGrid := container.NewGridWithColumns(3,
+		f.homeSelector.container,
+		container.NewCenter(swapBtn),
+		f.awaySelector.container,
+	)
+
+	importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
+		dialog.ShowInformation("Info", "Módulo de descarga en construcción...", f.Window)
+	})
+
+	content := container.NewVBox(
+		container.NewBorder(nil, nil, nil, importBtn, widget.NewLabelWithStyle("PARTIDO SELECCIONADO", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})),
+		selectorGrid,
+	)
+
+	return widget.NewCard("", "", content)
+}
+
+func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
+	f.homeWinText = canvas.NewText("0.0%", colorAccentGreen)
+	f.homeWinText.TextSize = 32
+	f.homeWinText.TextStyle = fyne.TextStyle{Bold: true}
+	f.homeWinText.Alignment = fyne.TextAlignCenter
+
+	f.drawText = canvas.NewText("0.0%", colorAccentGold)
+	f.drawText.TextSize = 32
+	f.drawText.TextStyle = fyne.TextStyle{Bold: true}
+	f.drawText.Alignment = fyne.TextAlignCenter
+
+	f.awayWinText = canvas.NewText("0.0%", colorAccentBlue)
+	f.awayWinText.TextSize = 32
+	f.awayWinText.TextStyle = fyne.TextStyle{Bold: true}
+	f.awayWinText.Alignment = fyne.TextAlignCenter
+
+	f.homeOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
+	f.drawOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
+	f.awayOdds = widget.NewLabelWithStyle("Cuota\n-", fyne.TextAlignCenter, fyne.TextStyle{})
+
+	cardHome := widget.NewCard("1 · LOCAL", "", container.NewVBox(container.NewCenter(f.homeWinText), f.homeOdds))
+	cardDraw := widget.NewCard("X · EMPATE", "", container.NewVBox(container.NewCenter(f.drawText), f.drawOdds))
+	cardAway := widget.NewCard("2 · VISITANTE", "", container.NewVBox(container.NewCenter(f.awayWinText), f.awayOdds))
+
+	grid := container.NewGridWithColumns(3, cardHome, cardDraw, cardAway)
+
+	calcBtn := widget.NewButtonWithIcon("Calcular 1X2", theme.ViewRefreshIcon(), func() {
+		f.updateOutcomeAsync()
+	})
+	calcBtn.Importance = widget.HighImportance
+
+	return container.NewVBox(grid, widget.NewSeparator(), calcBtn)
+}
+
+func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
+	f.homeExpectedText = canvas.NewText("0.00", colorTextPrimary)
+	f.homeExpectedText.TextSize = 28
+	f.homeExpectedText.TextStyle = fyne.TextStyle{Bold: true}
+	f.homeExpectedText.Alignment = fyne.TextAlignCenter
+
+	f.awayExpectedText = canvas.NewText("0.00", colorTextPrimary)
+	f.awayExpectedText.TextSize = 28
+	f.awayExpectedText.TextStyle = fyne.TextStyle{Bold: true}
+	f.awayExpectedText.Alignment = fyne.TextAlignCenter
+
+	f.totalExpectedText = canvas.NewText("0.00", colorTextPrimary)
+	f.totalExpectedText.TextSize = 36
+	f.totalExpectedText.TextStyle = fyne.TextStyle{Bold: true}
+	f.totalExpectedText.Alignment = fyne.TextAlignCenter
+
+	f.over75Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.over85Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.over95Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	f.over105Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+
+	cardHome := widget.NewCard("LOCAL", "Corners esperados", container.NewCenter(f.homeExpectedText))
+	cardAway := widget.NewCard("VISITANTE", "Corners esperados", container.NewCenter(f.awayExpectedText))
+	gridEquipos := container.NewGridWithColumns(2, cardHome, cardAway)
+
+	gridProbs := container.NewGridWithColumns(4,
+		container.NewVBox(widget.NewLabelWithStyle("+7.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over75Label),
+		container.NewVBox(widget.NewLabelWithStyle("+8.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over85Label),
+		container.NewVBox(widget.NewLabelWithStyle("+9.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over95Label),
+		container.NewVBox(widget.NewLabelWithStyle("+10.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over105Label),
+	)
+
+	calcBtn := widget.NewButtonWithIcon("Calcular", theme.ViewRefreshIcon(), func() {
+		f.updateCornersAsync()
+	})
+	calcBtn.Importance = widget.HighImportance
+
+	content := container.NewVBox(
+		gridEquipos,
+		widget.NewCard("TOTAL DEL PARTIDO", "Corners totales esperados", container.NewCenter(f.totalExpectedText)),
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle("PROBABILIDAD OVER", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		gridProbs,
+		widget.NewSeparator(),
+		calcBtn,
+	)
+
+	return container.NewVScroll(content)
+}
+
+func (f *FyneUI) buildBTTSTab() fyne.CanvasObject {
+	f.bttsResult = widget.NewLabel("Selecciona equipos para predecir BTTS")
+	f.bttsResult.Wrapping = fyne.TextWrapWord
+	calcBtn := widget.NewButtonWithIcon("Calcular BTTS", theme.ViewRefreshIcon(), func() {
+		f.updateBTTSAsync()
+	})
+	calcBtn.Importance = widget.HighImportance
+	return container.NewBorder(nil, container.NewVBox(widget.NewSeparator(), calcBtn), nil, nil, container.NewVScroll(f.bttsResult))
+}
+
+func (f *FyneUI) buildHandicapTab() fyne.CanvasObject {
+	f.handicapResult = widget.NewLabel("Selecciona equipos para predecir Handicap")
+	f.handicapResult.Wrapping = fyne.TextWrapWord
+	f.handicapEntry = widget.NewEntry()
+	f.handicapEntry.SetText("-0.5")
+	calcBtn := widget.NewButtonWithIcon("Calcular Handicap", theme.ViewRefreshIcon(), func() {
+		h, _ := strconv.ParseFloat(f.handicapEntry.Text, 64)
+		f.updateHandicapAsync(h)
+	})
+	calcBtn.Importance = widget.HighImportance
+	return container.NewBorder(container.NewVBox(widget.NewLabel("Handicap:"), f.handicapEntry), container.NewVBox(widget.NewSeparator(), calcBtn), nil, nil, container.NewVScroll(f.handicapResult))
+}
+
+// --- LÓGICA DE SELECCIÓN Y CÁLCULOS ---
+
 func (f *FyneUI) createTeamSelector(placeholder string, isHome bool) *TeamSelector {
 	ts := &TeamSelector{}
-
-	// Entry para escribir
 	ts.entry = widget.NewEntry()
 	ts.entry.SetPlaceHolder(placeholder)
-
-	// Select que aparece solo cuando hay coincidencias
 	ts.select_ = widget.NewSelect([]string{}, func(selected string) {
-		if selected == "" {
-			return
-		}
-		// Buscar el equipo seleccionado
+		if selected == "" { return }
 		for _, team := range f.Predictor.Teams {
 			if team.Name == selected {
 				ts.entry.SetText(selected)
-				if isHome {
-					f.setTeams(team, f.currentAway)
-				} else {
-					f.setTeams(f.currentHome, team)
-				}
+				if isHome { f.setTeams(team, f.currentAway) } else { f.setTeams(f.currentHome, team) }
 				ts.onSelected(team)
 				break
 			}
 		}
-		// Ocultar el select después de seleccionar
 		ts.select_.ClearSelected()
 		ts.select_.Options = []string{}
 		ts.select_.Refresh()
 		ts.select_.Hide()
 	})
-	ts.select_.PlaceHolder = "Haz clic para ver coincidencias..."
-	ts.select_.Hide() // Inicialmente oculto
-
-	// Layout: Entry arriba, Select abajo (solo visible cuando hay opciones)
+	ts.select_.Hide()
 	ts.container = container.NewVBox(ts.entry, ts.select_)
 
-	// Lógica de búsqueda con debounce simple
 	var lastSearch string
 	ts.entry.OnChanged = func(text string) {
-		// Ocultar select si el texto es muy corto
-		if len(text) < 2 {
-			ts.select_.Hide()
-			ts.select_.Options = []string{}
-			return
-		}
-
-		// Evitar búsquedas repetidas del mismo texto
-		if text == lastSearch {
-			return
-		}
+		if len(text) < 2 { ts.select_.Hide(); ts.select_.Options = []string{}; return }
+		if text == lastSearch { return }
 		lastSearch = text
-
-		// Buscar coincidencias
 		var matches []string
-		textLower := strings.ToLower(text)
 		for _, team := range f.Predictor.Teams {
-			if strings.Contains(strings.ToLower(team.Name), textLower) {
+			if strings.Contains(strings.ToLower(team.Name), strings.ToLower(text)) {
 				matches = append(matches, team.Name)
 			}
 		}
-
-		// Mostrar select solo si hay coincidencias
 		if len(matches) > 0 {
 			ts.select_.Options = matches
 			ts.select_.Refresh()
 			ts.select_.Show()
-		} else {
-			ts.select_.Hide()
-		}
+		} else { ts.select_.Hide() }
 	}
-
 	return ts
 }
 
-// buildMainUI construye la interfaz principal
-func (f *FyneUI) buildMainUI() fyne.CanvasObject {
-	// Título
-	title := canvas.NewText("⚽ FUTBOL PREDICTOR v2.0", theme.PrimaryColor())
-	title.TextSize = 28
-	title.TextStyle = fyne.TextStyle{Bold: true}
-	title.Alignment = fyne.TextAlignCenter
-
-	subtitle := widget.NewLabelWithStyle(
-		"Modelo predictivo avanzado con datos en tiempo real",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Italic: true},
-	)
-
-	// Selectores de equipos personalizados
-	f.homeSelector = f.createTeamSelector("🏠 Escribe equipo LOCAL...", true)
-	f.homeSelector.onSelected = func(t *models.Team) { f.onTeamSelected() }
-
-	f.awaySelector = f.createTeamSelector("✈️ Escribe equipo VISITANTE...", false)
-	f.awaySelector.onSelected = func(t *models.Team) { f.onTeamSelected() }
-
-	// Botón de búsqueda
-	searchBtn := widget.NewButtonWithIcon("Buscar / Actualizar", theme.SearchIcon(), func() {
-		f.handleSearch()
-	})
-
-	// Tabs para diferentes predicciones
-	tabs := container.NewAppTabs(
-		container.NewTabItem("📐 CORNERS", f.buildCornersTab()),
-		container.NewTabItem("⚽ BTTS", f.buildBTTSTab()),
-		container.NewTabItem("🎯 HANDICAP", f.buildHandicapTab()),
-		container.NewTabItem("💰 KELLY", f.buildKellyTab()),
-		container.NewTabItem("🏆 1X2", f.buildOutcomeTab()),
-	)
-	tabs.SetTabLocation(container.TabLocationTop)
-
-	// Layout principal
-	content := container.NewBorder(
-		container.NewVBox(
-			title,
-			subtitle,
-			widget.NewSeparator(),
-			container.NewGridWithColumns(2,
-				container.NewVBox(
-					widget.NewLabelWithStyle("LOCAL", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-					f.homeSelector.container,
-				),
-				container.NewVBox(
-					widget.NewLabelWithStyle("VISITANTE", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-					f.awaySelector.container,
-				),
-			),
-			searchBtn,
-			widget.NewSeparator(),
-		),
-		nil, nil, nil,
-		tabs,
-	)
-
-	return content
-}
-
-// onTeamSelected se llama cuando se selecciona un equipo
 func (f *FyneUI) onTeamSelected() {
 	home, away := f.getTeams()
-	if home != nil && away != nil {
-		// Validar que no sean el mismo equipo
-		if home.Name == away.Name {
-			f.showError("El equipo local y visitante deben ser diferentes")
-			return
-		}
+	if home != nil && away != nil && home.Name != away.Name {
+		f.updateOutcomeAsync()
 		f.updateCornersAsync()
 		f.updateBTTSAsync()
 	}
 }
 
-// handleSearch fuerza la búsqueda manual
 func (f *FyneUI) handleSearch() {
-	homeText := f.homeSelector.entry.Text
-	awayText := f.awaySelector.entry.Text
-
-	if homeText == "" || awayText == "" {
-		f.showError("Debes escribir ambos equipos")
-		return
-	}
-
+	homeText, awayText := f.homeSelector.entry.Text, f.awaySelector.entry.Text
+	if homeText == "" || awayText == "" { return }
 	var home, away *models.Team
-
-	// Búsqueda exacta primero
 	for _, team := range f.Predictor.Teams {
-		if strings.EqualFold(team.Name, homeText) {
-			home = team
-			f.homeSelector.entry.SetText(team.Name) // Normalizar nombre
-		}
-		if strings.EqualFold(team.Name, awayText) {
-			away = team
-			f.awaySelector.entry.SetText(team.Name)
-		}
+		if strings.EqualFold(team.Name, homeText) { home = team }
+		if strings.EqualFold(team.Name, awayText) { away = team }
 	}
-
-	// Si no hay exacta, buscar parcial
-	if home == nil {
-		for _, team := range f.Predictor.Teams {
-			if strings.Contains(strings.ToLower(team.Name), strings.ToLower(homeText)) {
-				home = team
-				f.homeSelector.entry.SetText(team.Name)
-				break
-			}
-		}
+	if home != nil && away != nil {
+		f.setTeams(home, away)
+		f.onTeamSelected()
 	}
-	if away == nil {
-		for _, team := range f.Predictor.Teams {
-			if strings.Contains(strings.ToLower(team.Name), strings.ToLower(awayText)) {
-				away = team
-				f.awaySelector.entry.SetText(team.Name)
-				break
-			}
-		}
-	}
-
-	if home == nil {
-		f.showError(fmt.Sprintf("Equipo no encontrado: %s", homeText))
-		return
-	}
-	if away == nil {
-		f.showError(fmt.Sprintf("Equipo no encontrado: %s", awayText))
-		return
-	}
-
-	f.setTeams(home, away)
-	f.onTeamSelected()
 }
 
-// buildCornersTab construye la pestaña de corners
-func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
-	f.resultText = widget.NewLabel("Selecciona dos equipos para ver la predicción")
-	f.resultText.Wrapping = fyne.TextWrapWord
-	f.resultText.Alignment = fyne.TextAlignLeading
+func (f *FyneUI) updateOutcomeAsync() {
+	home, away := f.getTeams()
+	if home == nil || away == nil { return }
+	go func() {
+		outcome := f.Predictor.PredictOutcome(home, away)
+		fyne.Do(func() {
+			f.homeWinText.Text = fmt.Sprintf("%.1f%%", outcome.HomeWinProb*100)
+			f.drawText.Text = fmt.Sprintf("%.1f%%", outcome.DrawProb*100)
+			f.awayWinText.Text = fmt.Sprintf("%.1f%%", outcome.AwayWinProb*100)
+			f.homeWinText.Refresh(); f.drawText.Refresh(); f.awayWinText.Refresh()
 
-	f.cornersChart = widget.NewLabel("📊 Distribución de corners aparecerá aquí")
-	f.cornersChart.Alignment = fyne.TextAlignCenter
-	f.cornersChart.Wrapping = fyne.TextWrapWord
-
-	calcBtn := widget.NewButtonWithIcon("Calcular Predicción", theme.ViewRefreshIcon(), func() {
-		f.updateCornersAsync()
-	})
-
-	split := container.NewVSplit(
-		container.NewVScroll(f.resultText),
-		container.NewVScroll(f.cornersChart),
-	)
-	split.Offset = 0.6
-
-	content := container.NewBorder(
-		nil,
-		container.NewVBox(widget.NewSeparator(), calcBtn),
-		nil, nil,
-		split,
-	)
-
-	return content
+			f.homeOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.HomeOdds))
+			f.drawOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.DrawOdds))
+			f.awayOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.AwayOdds))
+		})
+	}()
 }
 
-// buildBTTSTab construye la pestaña de BTTS
-func (f *FyneUI) buildBTTSTab() fyne.CanvasObject {
-	f.bttsResult = widget.NewLabel("Selecciona equipos para predecir BTTS")
-	f.bttsResult.Wrapping = fyne.TextWrapWord
-	f.bttsResult.Alignment = fyne.TextAlignLeading
-
-	calcBtn := widget.NewButtonWithIcon("Calcular BTTS", theme.ViewRefreshIcon(), func() {
-		f.updateBTTSAsync()
-	})
-
-	return container.NewBorder(
-		nil,
-		container.NewVBox(widget.NewSeparator(), calcBtn),
-		nil, nil,
-		container.NewVScroll(f.bttsResult),
-	)
-}
-
-// buildHandicapTab construye la pestaña de handicap
-func (f *FyneUI) buildHandicapTab() fyne.CanvasObject {
-	f.handicapResult = widget.NewLabel("Selecciona equipos para predecir Handicap")
-	f.handicapResult.Wrapping = fyne.TextWrapWord
-	f.handicapResult.Alignment = fyne.TextAlignLeading
-
-	f.handicapEntry = widget.NewEntry()
-	f.handicapEntry.SetPlaceHolder("Ej: -0.5, +0.75, 0.0")
-	f.handicapEntry.SetText("-0.5")
-	f.handicapEntry.Validator = func(s string) error {
-		if s == "" {
-			return nil
-		}
-		_, err := strconv.ParseFloat(s, 64)
-		return err
-	}
-
-	calcBtn := widget.NewButtonWithIcon("Calcular Handicap", theme.ViewRefreshIcon(), func() {
-		handicap, err := strconv.ParseFloat(f.handicapEntry.Text, 64)
-		if err != nil {
-			f.showError("Handicap inválido")
-			return
-		}
-		f.updateHandicapAsync(handicap)
-	})
-
-	return container.NewBorder(
-		container.NewVBox(
-			widget.NewLabel("Handicap Asiático:"),
-			f.handicapEntry,
-		),
-		container.NewVBox(widget.NewSeparator(), calcBtn),
-		nil, nil,
-		container.NewVScroll(f.handicapResult),
-	)
-}
-
-// buildKellyTab construye la pestaña del simulador Kelly
-func (f *FyneUI) buildKellyTab() fyne.CanvasObject {
-	f.oddsEntry = widget.NewEntry()
-	f.oddsEntry.SetPlaceHolder("Ej: 2.10")
-	f.oddsEntry.Validator = func(s string) error {
-		if s == "" {
-			return nil
-		}
-		val, err := strconv.ParseFloat(s, 64)
-		if err != nil || val <= 1.0 {
-			return fmt.Errorf("cuota debe ser > 1.0")
-		}
-		return nil
-	}
-
-	probLabel := widget.NewLabelWithData(
-		binding.FloatToStringWithFormat(f.probBinding, "Probabilidad: %.0f%%"),
-	)
-
-	slider := widget.NewSliderWithData(0, 100, f.probBinding)
-	slider.Step = 1
-
-	f.kellyResult = widget.NewLabel("")
-	f.kellyResult.Wrapping = fyne.TextWrapWord
-
-	calcBtn := widget.NewButtonWithIcon("Calcular Kelly", theme.ConfirmIcon(), func() {
-		f.calculateKelly()
-	})
-
-	return container.NewVBox(
-		widget.NewLabelWithStyle("CRITERIO DE KELLY", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		widget.NewSeparator(),
-		container.NewGridWithColumns(2,
-			widget.NewLabel("Probabilidad modelo:"),
-			probLabel,
-		),
-		slider,
-		container.NewGridWithColumns(2,
-			widget.NewLabel("Cuota ofrecida:"),
-			f.oddsEntry,
-		),
-		calcBtn,
-		widget.NewSeparator(),
-		f.kellyResult,
-	)
-}
-
-func (f *FyneUI) buildOutcomeTab() fyne.CanvasObject {
-	// Crear un label para mostrar resultados
-	outcomeResult := widget.NewLabel("Selecciona equipos para predecir el resultado")
-	outcomeResult.Wrapping = fyne.TextWrapWord
-
-	calcBtn := widget.NewButtonWithIcon("Calcular Resultado", theme.ViewRefreshIcon(), func() {
-		f.updateOutcomeAsync(outcomeResult)
-	})
-
-	return container.NewBorder(
-		nil,
-		container.NewVBox(widget.NewSeparator(), calcBtn),
-		nil, nil,
-		container.NewVScroll(outcomeResult),
-	)
-}
-// updateCornersAsync calcula corners en segundo plano con cancelación
 func (f *FyneUI) updateCornersAsync() {
 	home, away := f.getTeams()
-	if home == nil || away == nil {
-		f.resultText.SetText("❌ Selecciona ambos equipos primero")
-		return
-	}
-
-	// Verificar caché
-	f.cacheMu.RLock()
-	if f.cache != nil && f.cache.Home == home && f.cache.Away == away &&
-		time.Since(f.cache.Timestamp) < 5*time.Minute {
-		f.displayCornersResult(f.cache.Corners, home, away)
-		f.cacheMu.RUnlock()
-		return
-	}
-	f.cacheMu.RUnlock()
-
-	f.cancelCurrentCalculation()
-	ctx := f.calcCtx
-
-	f.resultText.SetText("🔄 Calculando predicción de corners...")
-	f.cornersChart.SetText("🔄 Cargando distribución...")
-
-	go func(ctx context.Context, home, away *models.Team) {
-		defer func() {
-			if r := recover(); r != nil {
-				fyne.Do(func() {
-					f.showError(fmt.Sprintf("Error en cálculo: %v", r))
-				})
-			}
-		}()
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
+	if home == nil || away == nil { return }
+	go func() {
 		pred := f.Predictor.CalculateCornerExpectation(home, away)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		f.cacheMu.Lock()
-		f.cache = &predictionCache{
-			Home:      home,
-			Away:      away,
-			Corners:   pred,
-			Timestamp: time.Now(),
-		}
-		f.cacheMu.Unlock()
-
 		fyne.Do(func() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				f.displayCornersResult(pred, home, away)
-			}
+			f.displayCornersResult(pred, home, away)
 		})
-	}(ctx, home, away)
+	}()
 }
-func (f *FyneUI) updateOutcomeAsync(resultLabel *widget.Label) {
-	home, away := f.getTeams()
-	if home == nil || away == nil {
-		resultLabel.SetText("❌ Selecciona ambos equipos primero")
-		return
-	}
 
-	// Cancelar cálculos previos
-	f.cancelCurrentCalculation()
-	ctx := f.calcCtx
-
-	resultLabel.SetText("🔄 Calculando probabilidades 1X2...")
-
-	go func(ctx context.Context, home, away *models.Team) {
-		defer func() {
-			if r := recover(); r != nil {
-				fyne.Do(func() {
-					f.showError(fmt.Sprintf("Error en cálculo: %v", r))
-				})
-			}
-		}()
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// Usar el nuevo método PredictOutcome
-		outcome := f.Predictor.PredictOutcome(home, away)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		fyne.Do(func() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				texto := fmt.Sprintf(`🏆 PREDICCIÓN DEL RESULTADO
-
-🏠 %s vs ✈️ %s
-
-📊 Probabilidades:
-• Victoria Local: %.1f%%
-• Empate:        %.1f%%
-• Victoria Visitante: %.1f%%
-
-💰 Cuotas justas:
-• 1: %.2f
-• X: %.2f
-• 2: %.2f`,
-					home.Name, away.Name,
-					outcome.HomeWinProb*100,
-					outcome.DrawProb*100,
-					outcome.AwayWinProb*100,
-					outcome.HomeOdds,
-					outcome.DrawOdds,
-					outcome.AwayOdds,
-				)
-				resultLabel.SetText(texto)
-			}
-		})
-	}(ctx, home, away)
-}
-// displayCornersResult muestra el resultado de corners
 func (f *FyneUI) displayCornersResult(pred *models.CornerPrediction, home, away *models.Team) {
-	texto := fmt.Sprintf(`📊 PREDICCIÓN DE CORNERS
-
-🏠 %s: %.2f corners esperados
-✈️ %s: %.2f corners esperados
-📈 Total esperado: %.2f corners
-📉 Varianza total: %.2f
-🎯 Desviación típica: %.2f
-🎲 Rango 68%%: [%.0f – %.0f]
-
-📊 Probabilidades acumuladas:
-• Over 7.5:  %.1f%%
-• Over 8.5:  %.1f%%
-• Over 9.5:  %.1f%%
-• Over 10.5: %.1f%%`,
-		home.Name, pred.HomeExpected,
-		away.Name, pred.AwayExpected,
-		pred.TotalExpected,
-		pred.TotalVariance,
-		pred.StdDev,
-		pred.TotalExpected-pred.StdDev, pred.TotalExpected+pred.StdDev,
-		pred.Over75*100, pred.Over85*100, pred.Over95*100, pred.Over105*100,
-	)
-
-	f.resultText.SetText(texto)
-
-	var distTexto strings.Builder
-	distTexto.WriteString("📊 Distribución de probabilidad:\n\n")
-
-	const maxBar = 40
-	for total := 0; total <= 20; total++ {
-		if prob, exists := pred.Distribution[total]; exists && prob > 0.001 {
-			barLength := int(prob * maxBar)
-			if barLength < 1 {
-				barLength = 1
-			}
-			barra := strings.Repeat("█", barLength)
-			distTexto.WriteString(fmt.Sprintf("%2d: %s (%.1f%%)\n", total, barra, prob*100))
-		}
+	f.homeExpectedText.Text = fmt.Sprintf("%.2f", pred.HomeExpected)
+	f.awayExpectedText.Text = fmt.Sprintf("%.2f", pred.AwayExpected)
+	f.totalExpectedText.Text = fmt.Sprintf("%.2f", pred.TotalExpected)
+	
+	if pred.TotalExpected > 10.5 {
+		f.totalExpectedText.Color = colorAccentGreen
+	} else {
+		f.totalExpectedText.Color = colorTextPrimary
 	}
-	f.cornersChart.SetText(distTexto.String())
+	
+	f.homeExpectedText.Refresh()
+	f.awayExpectedText.Refresh()
+	f.totalExpectedText.Refresh()
+
+	f.over75Label.SetText(fmt.Sprintf("%.1f%%", pred.Over75*100))
+	f.over85Label.SetText(fmt.Sprintf("%.1f%%", pred.Over85*100))
+	f.over95Label.SetText(fmt.Sprintf("%.1f%%", pred.Over95*100))
+	f.over105Label.SetText(fmt.Sprintf("%.1f%%", pred.Over105*100))
 }
 
-// updateBTTSAsync calcula BTTS en segundo plano
 func (f *FyneUI) updateBTTSAsync() {
 	home, away := f.getTeams()
-	if home == nil || away == nil {
-		f.bttsResult.SetText("❌ Selecciona ambos equipos primero")
-		return
-	}
-
-	f.cacheMu.RLock()
-	if f.cache != nil && f.cache.Home == home && f.cache.Away == away &&
-		f.cache.BTTS != nil && time.Since(f.cache.Timestamp) < 5*time.Minute {
-		f.displayBTTSResult(f.cache.BTTS, home, away)
-		f.cacheMu.RUnlock()
-		return
-	}
-	f.cacheMu.RUnlock()
-
-	f.cancelCurrentCalculation()
-	ctx := f.calcCtx
-
-	f.bttsResult.SetText("🔄 Calculando probabilidad BTTS...")
-
-	go func(ctx context.Context, home, away *models.Team) {
-		defer func() {
-			if r := recover(); r != nil {
-				fyne.Do(func() {
-					f.showError(fmt.Sprintf("Error en cálculo BTTS: %v", r))
-				})
-			}
-		}()
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
+	if home == nil || away == nil { return }
+	go func() {
 		pred := f.Predictor.CalculateBTTSProbability(home, away)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		f.cacheMu.Lock()
-		if f.cache != nil && f.cache.Home == home && f.cache.Away == away {
-			f.cache.BTTS = pred
-			f.cache.Timestamp = time.Now()
-		}
-		f.cacheMu.Unlock()
-
 		fyne.Do(func() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				f.displayBTTSResult(pred, home, away)
-			}
+			f.bttsResult.SetText(fmt.Sprintf("Probabilidad BTTS: %.1f%%\nCuota SÍ: %.2f\nCuota NO: %.2f", pred.Probability*100, pred.YesOdds, 1/(1-pred.Probability)))
 		})
-	}(ctx, home, away)
+	}()
 }
 
-// displayBTTSResult muestra el resultado de BTTS
-func (f *FyneUI) displayBTTSResult(pred *models.BTTSPrediction, home, away *models.Team) {
-	texto := fmt.Sprintf(`⚽ PREDICCIÓN BTTS
-
-🏠 %s vs ✈️ %s
-
-📈 Probabilidad de BTTS (SÍ): %.1f%%
-💰 Cuota justa SÍ: %.2f
-💰 Cuota justa NO: %.2f`,
-		home.Name, away.Name,
-		pred.Probability*100,
-		pred.YesOdds,
-		1/(1-pred.Probability),
-	)
-
-	f.bttsResult.SetText(texto)
-}
-
-// updateHandicapAsync calcula handicap en segundo plano
-func (f *FyneUI) updateHandicapAsync(handicap float64) {
+func (f *FyneUI) updateHandicapAsync(h float64) {
 	home, away := f.getTeams()
-	if home == nil || away == nil {
-		f.handicapResult.SetText("❌ Selecciona ambos equipos primero")
-		return
-	}
-
-	f.cancelCurrentCalculation()
-	ctx := f.calcCtx
-
-	f.handicapResult.SetText("🔄 Calculando handicap...")
-
-	go func(ctx context.Context, home, away *models.Team, h float64) {
-		defer func() {
-			if r := recover(); r != nil {
-				fyne.Do(func() {
-					f.showError(fmt.Sprintf("Error en cálculo handicap: %v", r))
-				})
-			}
-		}()
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
+	if home == nil || away == nil { return }
+	go func() {
 		pred := f.Predictor.CalculateHandicap(home, away, h)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		fyne.Do(func() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				f.displayHandicapResult(pred, home, away)
-			}
+			f.handicapResult.SetText(fmt.Sprintf("Local cubre: %.1f%%\nVisitante cubre: %.1f%%\nDiferencia: %.2f", pred.HomeProb*100, pred.AwayProb*100, pred.ExpectedValue))
 		})
-	}(ctx, home, away, handicap)
-}
-
-// displayHandicapResult muestra el resultado de handicap
-func (f *FyneUI) displayHandicapResult(pred *models.HandicapPrediction, home, away *models.Team) {
-	texto := fmt.Sprintf(`🎯 HANDICAP ASIÁTICO
-
-🏠 %s vs ✈️ %s
-Handicap: %.2f
-
-📊 Probabilidades:
-• Local cubre: %.1f%%
-• Visitante cubre: %.1f%%
-
-💰 Cuotas justas:
-• Local: %.2f
-• Visitante: %.2f
-
-⚽ Diferencia esperada: %.2f goles`,
-		home.Name, away.Name,
-		pred.Handicap,
-		pred.HomeProb*100,
-		pred.AwayProb*100,
-		1/pred.HomeProb,
-		1/pred.AwayProb,
-		pred.ExpectedValue,
-	)
-
-	f.handicapResult.SetText(texto)
-}
-
-// calculateKelly calcula y muestra resultado de Kelly
-func (f *FyneUI) calculateKelly() {
-	oddsText := f.oddsEntry.Text
-	if oddsText == "" {
-		f.kellyResult.SetText("❌ Ingresa una cuota")
-		return
-	}
-
-	odds, err := strconv.ParseFloat(oddsText, 64)
-	if err != nil || odds <= 1.0 {
-		f.kellyResult.SetText("❌ Cuota inválida (debe ser > 1.0)")
-		return
-	}
-
-	prob, _ := f.probBinding.Get()
-	prob = prob / 100.0
-
-	kelly := f.Predictor.KellyCriterion(prob, odds)
-	edge := f.Predictor.Edge(prob, odds)
-
-	var recomendacion string
-	if kelly > 0.05 {
-		recomendacion = "✅ APOSTAR - Valor significativo"
-	} else if kelly > 0 {
-		recomendacion = "⚠️ APOSTAR - Valor marginal"
-	} else {
-		recomendacion = "❌ NO APOSTAR - Sin valor"
-	}
-
-	texto := fmt.Sprintf(`📊 RESULTADOS KELLY
-
-Probabilidad: %.1f%%
-Cuota: %.2f
-Edge: %+.2f%%
-Kelly óptimo: %.2f%%
-
-%s`,
-		prob*100, odds, edge, kelly*100,
-		recomendacion,
-	)
-
-	f.kellyResult.SetText(texto)
-}
-
-// showError muestra un diálogo de error
-func (f *FyneUI) showError(msg string) {
-	dialog.ShowError(fmt.Errorf("%s", msg), f.Window)
+	}()
 }
