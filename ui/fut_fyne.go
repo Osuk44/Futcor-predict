@@ -39,6 +39,7 @@ type FyneUI struct {
 	Window    fyne.Window
 	App       fyne.App
 	DataDir   string
+    MostrarAlertaPermiso   bool 
 
 	homeSelector *TeamSelector
 	awaySelector *TeamSelector
@@ -95,6 +96,13 @@ func NewFyneUI(predictor *models.Predictor, dataDir string) *FyneUI {
 
 func (f *FyneUI) Run() {
 	f.Window.SetContent(f.buildMainUI())
+	// Comprobar si debemos mostrar el diálogo de permisoiso
+	if f.MostrarAlertaPermiso {
+		dialog.ShowCustom("⚠️ Permiso Requerido", "Entendido", 
+			widget.NewLabel("Para descargar los datos de fútbol, ve a Ajustes > Aplicaciones > Futcor Predict > Permisos y activa 'Acceso a todos los archivos'.\n\nLuego reinicia la app."), 
+			f.Window)
+	}
+	
 	f.Window.ShowAndRun()
 }
 
