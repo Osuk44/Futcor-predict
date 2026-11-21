@@ -12,14 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"gopkg.in/yaml.v3"
 )
 
-// (Mantén tus estructuras TableConfig y ResponseData tal cual)
 type TableConfig struct {
 	Name         string `yaml:"name"`
 	TableID      string `yaml:"table_id"`
@@ -37,7 +35,6 @@ type ResponseData struct {
 	Data            [][]interface{} `json:"data"`
 }
 
-// MEJORA 1: Quitamos "br" y "deflate" para evitar fallos de descompresión
 var commonHeaders = map[string]string{
 	"accept":             "application/json, text/javascript, */*; q=0.01",
 	"accept-encoding":    "gzip, zstd",
@@ -48,14 +45,11 @@ var commonHeaders = map[string]string{
 	"x-requested-with":   "XMLHttpRequest",
 }
 
-// MEJORA 2 y 3: Manejo de errores riguroso y Regex más amplia
 func getDynamicNonce(client *http.Client, referer string) (string, error) {
 	req, err := http.NewRequest("GET", referer, nil)
 	if err != nil {
 		return "", err
 	}
-
-	// No forzamos Accept-Encoding aquí, dejamos que Go maneje el gzip nativo si es posible
 	req.Header.Set("User-Agent", commonHeaders["user-agent"])
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
 
@@ -80,21 +74,17 @@ func getDynamicNonce(client *http.Client, referer string) (string, error) {
 	}
 
 	html := string(body)
-
-	// Regex mejorada: busca wdtNonce o wdt_nonce, con comillas simples, dobles o escapadas (\")
 	re := regexp.MustCompile(`(?:wdtNonce|wdt_nonce)[\\"'\s]*[:=][\\"'\s]*([a-zA-Z0-9]+)`)
 	matches := re.FindStringSubmatch(html)
 
 	if len(matches) < 2 {
-		return "", fmt.Errorf("no se encontró el nonce en %s (posible bloqueo o cambio de web)", referer)
+		return "", fmt.Errorf("no se encontró el nonce en %s", referer)
 	}
 
 	return matches[1], nil
 }
 
-// MEJORA 4 y 5: Control de directorios, caché de nonces y conteo de errores
 func DescargarTodo(outDir string) error {
-	// 5. Asegurar que el directorio existe
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return fmt.Errorf("no se pudo crear el directorio %s: %w", outDir, err)
 	}
@@ -117,14 +107,10 @@ func DescargarTodo(outDir string) error {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 30 * time.Second}
 
-	// 3. Caché de nonces por URL (Referer) para no saturar la web
 	nonceCache := make(map[string]string)
-
 	exitos := 0
 	errores := 0
 	var ultimoError error
-
-	fmt.Printf("📋 Procesando %d tablas...\n", len(tables))
 
 	for i, cfg := range tables {
 		fmt.Printf("[%d/%d] 📥 %s\n", i+1, len(tables), cfg.Name)
@@ -140,8 +126,7 @@ func DescargarTodo(outDir string) error {
 				continue
 			}
 			nonceCache[cfg.Referer] = nonce
-			// Pausa pequeña solo cuando sacamos un nonce nuevo para simular humano
-			time.Sleep(1 * time.Second) 
+			time.Sleep(1 * time.Second)
 		}
 
 		err := downloadTable(client, cfg, outDir, nonce)
@@ -153,10 +138,9 @@ func DescargarTodo(outDir string) error {
 			fmt.Printf("  ✅ Guardado\n")
 			exitos++
 		}
-		time.Sleep(500 * time.Millisecond) // Pausa entre descargas
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	// 4. Retorno honesto para la UI
 	if exitos == 0 {
 		return fmt.Errorf("fallaron todas las descargas. Último error: %v", ultimoError)
 	}
@@ -167,7 +151,6 @@ func DescargarTodo(outDir string) error {
 	return nil
 }
 
-// downloadTable ahora recibe el cliente para mantener cookies
 func downloadTable(client *http.Client, cfg TableConfig, outDir, nonce string) error {
 	url := fmt.Sprintf("https://footiqo.com/wp-admin/admin-ajax.php?action=get_wdtable&table_id=%s", cfg.TableID)
 	payload := buildPayload(cfg.TableID, cfg.Category, nonce, 2000)
@@ -200,7 +183,7 @@ func downloadTable(client *http.Client, cfg TableConfig, outDir, nonce string) e
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body[:min(len(body), 100)]))
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
 	var result ResponseData
@@ -212,10 +195,119 @@ func downloadTable(client *http.Client, cfg TableConfig, outDir, nonce string) e
 		return fmt.Errorf("no hay datos (posible nonce inválido o sin partidos)")
 	}
 
-	// ... AQUÍ VA TU LÓGICA DE FILTRADO Y GUARDADO EN CSV ...
-	// (Mantén exactamente igual tu código de filtrado de ligas, columnas y escritura de CSV)
+	rows := result.Data
 
-	return nil // Retorna nil si se guardó bien
+	// FILTRO POR LIGA
+	if cfg.FilterLeague != "" {
+		var filtered [][]interface{}
+		for _, row := range rows {
+			if len(row) < 3 { continue }
+			league, ok := row[2].(string)
+			if ok && league == cfg.FilterLeague {
+				filtered = append(filtered, row)
+			}
+		}
+		if len(filtered) == 0 { return fmt.Errorf("no se encontraron filas con liga '%s'", cfg.FilterLeague) }
+		rows = filtered
+	}
+
+	// FILTRO COLUMNAS
+	if len(cfg.KeepColumns) > 0 {
+		var selected [][]interface{}
+		for _, row := range rows {
+			var newRow []interface{}
+			for _, idx := range cfg.KeepColumns {
+				if idx >= 0 && idx < len(row) {
+					newRow = append(newRow, row[idx])
+				} else {
+					newRow = append(newRow, "")
+				}
+			}
+			selected = append(selected, newRow)
+		}
+		rows = selected
+	}
+
+	// FILTRO XG
+	if cfg.Category == "xg" {
+		var filtered [][]interface{}
+		for _, row := range rows {
+			if len(row) > 0 {
+				period, ok := row[0].(string)
+				if ok && period == "Current season" {
+					filtered = append(filtered, row)
+				}
+			}
+		}
+		if len(filtered) > 0 { rows = filtered }
+	}
+
+	// GUARDAR CSV
+	outputPath := filepath.Join(outDir, cfg.Name+".csv")
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	var headers []string
+	switch cfg.Category {
+	case "btts":
+		headers = []string{"Team", "Matches Played", "BTTS YES %", "BTTS NO %"}
+	case "corners":
+		headers = []string{"Team", "Matches Played", "Avg Corners Taken", "Avg Corners Conceded",
+			"Over 7.5 (%)", "Under 7.5 (%)", "Over 8.5 (%)", "Under 8.5 (%)",
+			"Over 9.5 (%)", "Under 9.5 (%)", "Over 10.5 (%)", "Under 10.5 (%)"}
+	case "wdl":
+		headers = []string{"Team", "Matches Played", "Win %", "Draw %", "Loss %"}
+	case "xg":
+		headers = []string{"Period", "Country", "League", "Team", "Matches Played",
+			"Avg xG For", "Avg xG Against", "xG Diff", "Avg Goals For", "Avg Goals Against",
+			"Finishing Delta", "Conceded Delta"}
+	}
+	if len(headers) > 0 {
+		writer.Write(headers)
+	}
+
+	for _, row := range rows {
+		record := make([]string, len(row))
+		for i, cell := range row {
+			record[i] = fmt.Sprintf("%v", cell)
+		}
+		writer.Write(record)
+	}
+
+	return nil
+}
+
+func buildPayload(tableID, category, nonce string, length int) string {
+	switch category {
+	case "corners":
+		return fmt.Sprintf(
+			"action=get_wdtable&table_id=%s&draw=1&columns[0][data]=0&columns[0][name]=Team&columns[0][searchable]=true&columns[0][orderable]=true&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=1&columns[1][name]=TG&columns[1][searchable]=true&columns[1][orderable]=true&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=2&columns[2][name]=AVCFT&columns[2][searchable]=true&columns[2][orderable]=true&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=3&columns[3][name]=AVCRFT&columns[3][searchable]=true&columns[3][orderable]=true&columns[3][search][value]=&columns[3][search][regex]=false&columns[4][data]=4&columns[4][name]=O75CFT&columns[4][searchable]=true&columns[4][orderable]=true&columns[4][search][value]=&columns[4][search][regex]=false&columns[5][data]=5&columns[5][name]=U75CFT&columns[5][searchable]=true&columns[5][orderable]=true&columns[5][search][value]=&columns[5][search][regex]=false&columns[6][data]=6&columns[6][name]=O85CFT&columns[6][searchable]=true&columns[6][orderable]=true&columns[6][search][value]=&columns[6][search][regex]=false&columns[7][data]=7&columns[7][name]=U85CFT&columns[7][searchable]=true&columns[7][orderable]=true&columns[7][search][value]=&columns[7][search][regex]=false&columns[8][data]=8&columns[8][name]=O95CFT&columns[8][searchable]=true&columns[8][orderable]=true&columns[8][search][value]=&columns[8][search][regex]=false&columns[9][data]=9&columns[9][name]=U95CFT&columns[9][searchable]=true&columns[9][orderable]=true&columns[9][search][value]=&columns[9][search][regex]=false&columns[10][data]=10&columns[10][name]=O105CFT&columns[10][searchable]=true&columns[10][orderable]=true&columns[10][search][value]=&columns[10][search][regex]=false&columns[11][data]=11&columns[11][name]=U105CFT&columns[11][searchable]=true&columns[11][orderable]=true&columns[11][search][value]=&columns[11][search][regex]=false&order[0][column]=2&order[0][dir]=desc&start=0&length=%d&search[value]=&search[regex]=false&wdtNonce=%s",
+			tableID, length, nonce,
+		)
+	case "btts":
+		return fmt.Sprintf(
+			"action=get_wdtable&table_id=%s&draw=1&columns[0][data]=0&columns[0][name]=Team&columns[0][searchable]=true&columns[0][orderable]=true&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=1&columns[1][name]=TGA&columns[1][searchable]=true&columns[1][orderable]=true&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=2&columns[2][name]=BTTSYA1H&columns[2][searchable]=true&columns[2][orderable]=true&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=3&columns[3][name]=BTTSNA1H&columns[3][searchable]=true&columns[3][orderable]=true&columns[3][search][value]=&columns[3][search][regex]=false&order[0][column]=2&order[0][dir]=desc&start=0&length=%d&search[value]=&search[regex]=false&wdtNonce=%s",
+			tableID, length, nonce,
+		)
+	case "wdl":
+		return fmt.Sprintf(
+			"action=get_wdtable&table_id=%s&draw=1&columns[0][data]=0&columns[0][name]=Team&columns[0][searchable]=true&columns[0][orderable]=true&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=1&columns[1][name]=TGA&columns[1][searchable]=true&columns[1][orderable]=true&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=2&columns[2][name]=WAFT&columns[2][searchable]=true&columns[2][orderable]=true&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=3&columns[3][name]=DAFT&columns[3][searchable]=true&columns[3][orderable]=true&columns[3][search][value]=&columns[3][search][regex]=false&columns[4][data]=4&columns[4][name]=LAFT&columns[4][searchable]=true&columns[4][orderable]=true&columns[4][search][value]=&columns[4][search][regex]=false&order[0][column]=2&order[0][dir]=desc&start=0&length=%d&search[value]=&search[regex]=false&wdtNonce=%s",
+			tableID, length, nonce,
+		)
+	case "xg":
+		return fmt.Sprintf(
+			"action=get_wdtable&table_id=%s&draw=1&columns[0][data]=0&columns[0][name]=TimeFrame&columns[0][searchable]=true&columns[0][orderable]=true&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=1&columns[1][name]=Country&columns[1][searchable]=true&columns[1][orderable]=true&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=2&columns[2][name]=League&columns[2][searchable]=true&columns[2][orderable]=true&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=3&columns[3][name]=Team&columns[3][searchable]=true&columns[3][orderable]=true&columns[3][search][value]=&columns[3][search][regex]=false&columns[4][data]=4&columns[4][name]=Matches Played&columns[4][searchable]=true&columns[4][orderable]=true&columns[4][search][value]=&columns[4][search][regex]=false&columns[5][data]=5&columns[5][name]=Avg xG For&columns[5][searchable]=true&columns[5][orderable]=true&columns[5][search][value]=&columns[5][search][regex]=false&columns[6][data]=6&columns[6][name]=Avg xG Against&columns[6][searchable]=true&columns[6][orderable]=true&columns[6][search][value]=&columns[6][search][regex]=false&columns[7][data]=7&columns[7][name]=xG Diff&columns[7][searchable]=true&columns[7][orderable]=true&columns[7][search][value]=&columns[7][search][regex]=false&columns[8][data]=8&columns[8][name]=Avg Goals For&columns[8][searchable]=true&columns[8][orderable]=true&columns[8][search][value]=&columns[8][search][regex]=false&columns[9][data]=9&columns[9][name]=Avg Goals Against&columns[9][searchable]=true&columns[9][orderable]=true&columns[9][search][value]=&columns[9][search][regex]=false&columns[10][data]=10&columns[10][name]=Finishing Delta&columns[10][searchable]=true&columns[10][orderable]=true&columns[10][search][value]=&columns[10][search][regex]=false&columns[11][data]=11&columns[11][name]=Conceded Delta&columns[11][searchable]=true&columns[11][orderable]=true&columns[11][search][value]=&columns[11][search][regex]=false&order[0][column]=5&order[0][dir]=desc&start=0&length=%d&search[value]=&search[regex]=false&wdtNonce=%s",
+			tableID, length, nonce,
+		)
+	default:
+		return fmt.Sprintf("action=get_wdtable&table_id=%s&draw=1&start=0&length=%d&search[value]=&search[regex]=false&wdtNonce=%s", tableID, length, nonce)
+	}
 }
 
 func decompressBody(resp *http.Response, body []byte) ([]byte, error) {
@@ -234,10 +326,4 @@ func decompressBody(resp *http.Response, body []byte) ([]byte, error) {
 	default:
 		return body, nil
 	}
-}
-
-// Auxiliar para no imprimir respuestas gigantes en errores
-func min(a, b int) int {
-	if a < b { return a }
-	return b
 }
