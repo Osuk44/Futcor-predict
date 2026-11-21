@@ -9,9 +9,8 @@
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/second-half-europe-champions-league"        
   category: "btts"                           
   league: "Europe_Champions_League"        
-  
 
-- name: "team_BTTS_1H_Overall_Germany Bundesliga"     # El nombre exacto del archivo (sin .csv)
+- name: "team_BTTS_1H_Overall_Germany Bundesliga"     
   table_id: "432"                             
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/first-half-germany-bundesliga/" 
   category: "btts"                            
@@ -34,7 +33,6 @@
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/second-half-spain-laliga/"         
   category: "btts"                           
   league: "LaLiga"  
-  
   
 - name: "team_BTTS_1H_Overall_France Ligue 1"      
   table_id: "523"                             
@@ -75,30 +73,28 @@
 - name: "team_BTTS_1H_Overall_Mexico Liga MX"      
   table_id: "85"                             
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/first-half/"         
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
+  filter_league: "Liga MX"
   keep_columns: [3,4,5,6]
   category: "btts" 
   
 - name: "team_BTTS_2H_Overall_Mexico Liga MX"      
   table_id: "91"                             
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/second-half/"         
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
+  filter_league: "Liga MX"
   keep_columns: [3,4,5,6]
   category: "btts"                           
 
-  
 - name: "team_BTTS_1H_Overall_Brazil Brazilian League"      
   table_id: "85"                             
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/first-half/"         
-  filter_league: "Serie A Betano"          # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6]
   category: "btts"
-  
   
 - name: "team_BTTS_2H_Overall_Brazil Brazilian League"      
   table_id: "91"                             
   referer: "https://footiqo.com/statistics/teams/both-teams-to-score/second-half/"         
-  filter_league: "Serie A Betano"         # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6]
   category: "btts"              
   
@@ -162,13 +158,11 @@
   category: "corners"                           
   league: "Premier_League" 
 
-
 - name: "team_Corners_FT_Home_France Ligue 1"      
   table_id: "502"                             
   referer: "https://footiqo.com/statistics/teams/corners/full-time-France-Ligue-1/"         
   category: "corners"                           
   league: "France_Ligue_1" 
-  
   
 - name: "team_Corners_FT_Away_France Ligue 1"      
   table_id: "503"                             
@@ -176,156 +170,144 @@
   category: "corners"                           
   league: "France_Ligue_1"  
   
-  
 - name: "team_Corners_FT_Home_Mexico Liga MX"      
   table_id: "44"                             
   referer: "https://footiqo.com/statistics/teams/corners/full-time/"         
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
+  filter_league: "Liga MX"
   keep_columns: [3,4,5,6,7,8,9,10,11,12,13,14]
   category: "corners"     
   
 - name: "team_Corners_FT_Away_Mexico Liga MX"      
   table_id: "46"                             
   referer: "https://footiqo.com/statistics/teams/corners/full-time/"         
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
+  filter_league: "Liga MX"
   keep_columns: [3,4,5,6,7,8,9,10,11,12,13,14]
   category: "corners"     
-  
   
 - name: "team_Corners_FT_Home_Brazil Brazilian League"      
   table_id: "44"                             
   referer: "https://footiqo.com/statistics/teams/corners/full-time/"         
-  filter_league: "Serie A Betano"          # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6,7,8,9,10,11,12,13,14]
   category: "corners"  
-  
   
 - name: "team_Corners_FT_Away_Brazil Brazilian League"      
   table_id: "46"                             
   referer: "https://footiqo.com/statistics/teams/corners/full-time/"         
-  filter_league: "Serie A Betano"          # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6,7,8,9,10,11,12,13,14]
   category: "corners"  
-  
-  
   
 - name: "team_WDL_FT_Home_Germany Bundesliga"      
   table_id: "394"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-germany-bundesliga/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Bundesliga" 
-  
   
 - name: "team_WDL_FT_Away_Germany Bundesliga"      
   table_id: "395"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-germany-bundesliga/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Bundesliga" 
 
 - name: "team_WDL_FT_Home_Spain LaLiga"      
   table_id: "347"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Spain-LaLiga/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "LaLiga" 
-
 
 - name: "team_WDL_FT_Away_Spain LaLiga"      
   table_id: "348"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Spain-LaLiga/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "LaLiga" 
   
-- name: "team_WDL_FT_Home_Italy Seria A"      
+# CORREGIDO: Serie A en lugar de Seria A
+- name: "team_WDL_FT_Home_Italy Serie A"      
   table_id: "439"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Italy-Serie-A/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Serie_A" 
   
-- name: "team_WDL_FT_Away_Italy Seria A"      
+- name: "team_WDL_FT_Away_Italy Serie A"      
   table_id: "440"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Italy-Serie-A/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Serie_A" 
-  
   
 - name: "team_WDL_FT_Home_England Premier League"      
   table_id: "302"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-England-Premier-League/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Premier_League" 
   
 - name: "team_WDL_FT_Away_England Premier League"      
   table_id: "303"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-England-Premier-League/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Premier_League" 
   
 - name: "team_WDL_FT_Home_France Ligue 1"      
   table_id: "484"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-France-Ligue-1/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "France_Ligue_1" 
   
 - name: "team_WDL_FT_Away_France Ligue 1"      
   table_id: "485"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-France-Ligue-1/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "France_Ligue_1" 
   
 - name: "team_WDL_FT_Home_Europe Champions League"      
   table_id: "629"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Europe-Champions-League/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Europe_Champions_League" 
   
 - name: "team_WDL_FT_Away_Europe Champions League"      
   table_id: "630"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time-Europe-Champions-League/"         
-  category: "WDL"                           
+  category: "wdl"                           
   league: "Europe_Champions_League" 
   
 - name: "team_WDL_FT_Home_Brazil Brazilian League"      
   table_id: "7"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time/"         
-  filter_league: "Serie A Betano"          # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6,7]
-  category: "WDL"  
+  category: "wdl"  
   
 - name: "team_WDL_FT_Away_Brazil Brazilian League"      
   table_id: "9"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time/"         
-  filter_league: "Serie A Betano"          # ← Solo guardar filas de esta liga
+  filter_league: "Serie A Betano"
   keep_columns: [3,4,5,6,7]
-  category: "WDL"  
+  category: "wdl"  
   
 - name: "team_WDL_FT_Home_Mexico Liga MX"      
   table_id: "7"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time/"         
-  category: "WDL"  
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
-  #keep_columns: [0, 1, 2]
-  
+  category: "wdl"  
+  filter_league: "Liga MX"
   
 - name: "team_WDL_FT_Away_Mexico Liga MX"      
   table_id: "9"                             
   referer: "https://footiqo.com/statistics/teams/1x2/full-time/"         
-  category: "WDL"
-  filter_league: "Liga MX"          # ← Solo guardar filas de esta liga
-  #keep_columns: [0, 1, 2]
-    
-  
-- name: "team_XG_FT_Home_Europe Champions League"      
+  category: "wdl"
+  filter_league: "Liga MX"
+
+# CORREGIDO: xG en minúsculas en el nombre y en la categoría
+- name: "team_xG_FT_Home_Europe Champions League"      
   table_id: "862"                             
   referer: "https://footiqo.com/statistics/teams/XG/full-time/"         
-  category: "xG" 
-  filter_league: "Champions League"          # ← Solo guardar filas de esta liga
+  category: "xg" 
+  filter_league: "Champions League"
   keep_columns: [0,1,2,3,4,5,6,8,9,10,11]
    
-  
-- name: "team_XG_FT_Away_Europe Champions League"      
+- name: "team_xG_FT_Away_Europe Champions League"      
   table_id: "863"                             
   referer: "https://footiqo.com/statistics/teams/XG/full-time/"         
-  category: "xG"
-  filter_league: "Champions League"          # ← Solo guardar filas de esta liga
+  category: "xg"
+  filter_league: "Champions League"
   keep_columns: [0,1,2,3,4,5,6,8,9,10,11]
-    

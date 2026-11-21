@@ -74,14 +74,23 @@ func getDynamicNonce(client *http.Client, referer string) (string, error) {
 	}
 
 	html := string(body)
-	re := regexp.MustCompile(`(?:wdtNonce|wdt_nonce)[\\"'\s]*[:=][\\"'\s]*([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(html)
 
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no se encontró el nonce en %s", referer)
+	// Regex mejorada: captura wdtNonce (con o sin sufijo) dentro de un input oculto
+	// Busca: name="wdtNonce..." seguido de value="..."
+	re := regexp.MustCompile(`(?i)name="(wdtNonce[^"]*)"[^>]*value="([^"]+)"`)
+	matches := re.FindStringSubmatch(html)
+	if len(matches) < 3 {
+		// Si no encuentra con el patrón anterior, intenta con el orden de atributos invertido
+		re = regexp.MustCompile(`(?i)value="([^"]+)"[^>]*name="(wdtNonce[^"]*)"`)
+		matches = re.FindStringSubmatch(html)
 	}
 
-	return matches[1], nil
+	if len(matches) < 3 {
+		return "", fmt.Errorf("no se encontró el nonce en %s (posible bloqueo o cambio de web)", referer)
+	}
+
+	// El valor del nonce está en el segundo grupo de captura
+	return matches[2], nil
 }
 
 func DescargarTodo(outDir string) error {
