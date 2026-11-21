@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+    "futcor_predict/downloader"
 	"futcor_predict/models"
 	"strconv"
 	"strings"
@@ -98,11 +99,17 @@ func (f *FyneUI) Run() {
 	f.Window.SetContent(f.buildMainUI())
 	// Comprobar si debemos mostrar el diálogo de permisoiso
 	if f.MostrarAlertaPermiso {
-		dialog.ShowCustom("⚠️ Permiso Requerido", "Entendido", 
-			widget.NewLabel("Para descargar los datos de fútbol, ve a Ajustes > Aplicaciones > Futcor Predict > Permisos y activa 'Acceso a todos los archivos'.\n\nLuego reinicia la app."), 
-			f.Window)
-	}
+	// Creamos el mensaje e
+	mensaje := widget.NewLabel("Para descargar los datos de fútbol, ve a Ajustes > Aplicaciones > Futcor Predict > Permisos y activa 'Acceso a todos los archivos'.")
+	mensaje.Wrapping = fyne.TextWrapWord
 	
+	dialog.ShowCustom("⚠️ Permiso Requerido", "Entendido", 
+		container.NewVBox(
+			mensaje,
+			widget.NewLabel("\nLuego reinicia la app."), 
+		), 
+		f.Window)
+ }
 	f.Window.ShowAndRun()
 }
 
@@ -164,9 +171,29 @@ func (f *FyneUI) buildHeaderCard() fyne.CanvasObject {
 		),
 	)
 
-	importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
-		dialog.ShowInformation("Info", "Módulo de descarga en construcción...", f.Window)
-	})
+
+  importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
+	// 1. Mostrar diálogo de "Descargando..."
+	progress := dialog.NewCustomWithoutButtons("Descargando...", 
+		widget.NewLabel("Obteniendo datos de Footiqo...\nEsto puede tardar un minuto."), f.Window)
+	progress.Show()
+
+	// 2. Ejecutar en un hilo aparte
+    	go func() {
+		// Aquí llamamos a tu paquete
+	    	err := downloader.DescargarTodo(f.DataDir)
+		
+		// 3. Actualizar la UI desde el hilo principal
+	       	fyne.Do(func() {
+		    	progress.Hide()
+		    	if err != nil {
+				dialog.ShowError(fmt.Errorf("Error en descarga: %v", err), f.Window)
+		    	} else {
+			    	dialog.ShowInformation("¡Éxito!", "Datos actualizados correctamente.\n\n(Reinicia la app para cargar los nuevos datos)", f.Window)
+	     		}
+	    	})
+    	}()
+    })
 
 	titleLabel := widget.NewLabelWithStyle("PARTIDO", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	titleWithIcon := container.NewHBox(widget.NewIcon(theme.SearchIcon()), titleLabel)
