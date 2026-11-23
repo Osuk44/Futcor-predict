@@ -36,6 +36,6 @@ team_WDL_FT_Overall_Germany Bundesliga.csv
 
 team_WDL_FT_Overall_Spain LaLiga.csv
 
-team_XG _FT_Away_Europe Champions League.csv
+team_xG_FT_Away_Europe Champions League.csv
 
-team_XG _FT_Home_Europe Champions League.csv
+team_xG_FT_Home_Europe Champions League.csv

@@ -1,0 +1,29 @@
+
+# --- Datos generados y respaldos locales ---
+data/old-d/
+data/team_*.csv
+
+# --- Cookies, sesiones y secretos ---
+*cookies*.json
+.env
+.env.*
+!.env.example
+
+# --- Binarios, paquetes Android y tests compilados ---
+*.apk
+*.aab
+*.keystore
+*.jks
+*.exe
+*.test
+*.out
+coverage.out
+bin/
+dist/
+build/
+
+# --- Temporales y logs ---
+*.tmp
+*.bak
+*.log
+.DS_Store

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"futcor_predict/models"
 	"futcor_predict/ui"
@@ -12,34 +13,25 @@ import (
 	"time"
 )
 
-// Variable global para saber si tenemos permiso de escritura
 var hasStoragePermission = true
 
 func resolveDataDir() string {
 	if runtime.GOOS == "android" {
 		ruta := "/storage/emulated/0/futcor/data"
-		
-		// Intentar crear la carpeta
-		err := os.MkdirAll(ruta, 0755)
-		if err != nil {
-			log.Printf("❌ ERROR: Sin permisos para crear %s: %v", ruta, err)
+
+		if err := os.MkdirAll(ruta, 0755); err != nil {
+			log.Printf("❌ Sin permisos para crear %s: %v", ruta, err)
 			hasStoragePermission = false
-			
-			// Fallback a la carpeta privada de la app para que no crashee
-			fallback, _ := os.UserConfigDir()
-			return filepath.Join(fallback, "data")
+			return androidFallbackDir()
 		}
-		
-		// Verificar si realmente podemos escribir un archivo de prueba
+
 		testFile := filepath.Join(ruta, ".test_write")
 		if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-			log.Printf("❌ ERROR: Carpeta creada pero sin permiso de escritura: %v", err)
+			log.Printf("❌ Carpeta creada sin permiso de escritura: %v", err)
 			hasStoragePermission = false
-			fallback, _ := os.UserConfigDir()
-			return filepath.Join(fallback, "data")
+			return androidFallbackDir()
 		}
-		os.Remove(testFile) // Limpiamos el archivo de prueba
-		
+		_ = os.Remove(testFile)
 		return ruta
 	}
 
@@ -56,34 +48,25 @@ func resolveDataDir() string {
 	return "data"
 }
 
-func main() {
-	// 1. Resolver el directorio de datos
-	dataDir := resolveDataDir()
-	
-	// 2. Si estamos en Android y no hay permiso, abrir los ajustes automáticamente
-	if runtime.GOOS == "android" && !hasStoragePermission {
-		log.Println("⚠️ Abriendo ajustes de Android para solicitar permiso...")
-		// Este comando de Android abre la pantalla de permisos de la app
-		cmd := exec.Command("am", "start", "-a", "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION", "-d", "package:com.futcor.predictor")
-		cmd.Run()
+func androidFallbackDir() string {
+	if cfgDir, err := os.UserConfigDir(); err == nil && cfgDir != "" {
+		dir := filepath.Join(cfgDir, "futcor", "data")
+		if mkErr := os.MkdirAll(dir, 0755); mkErr == nil {
+			return dir
+		}
 	}
+	dir := filepath.Join(os.TempDir(), "futcor", "data")
+	_ = os.MkdirAll(dir, 0755)
+	return dir
+}
 
-	predictor := models.NewPredictor()
-
-	fmt.Println("🚀 Iniciando Futbol Predictor...")
-	fmt.Println("📂 Usando directorio de datos:", dataDir)
-
-	// 3. Cargar equipos base
-	err := predictor.LoadTeamsFromCSV(filepath.Join(dataDir, "equipos.csv"))
-	if err != nil {
-		log.Printf("⚠️ Advertencia: No se pudieron cargar los equipos: %v", err)
-		log.Println("📋 Usando datos de ejemplo...")
-		createSampleData(predictor)
-	} else {
-		fmt.Printf("✅ %d equipos cargados\n", len(predictor.Teams))
+func logIfUnexpectedErr(label string, err error) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("⚠️ Error cargando %s: %v", label, err)
 	}
+}
 
-	// 4. Cargar estadísticas por liga (BTTS, xG, WDL y CÓRNERS)
+func loadAllStats(predictor *models.Predictor, dataDir string) {
 	ligas := []string{
 		"Spain LaLiga",
 		"England Premier League",
@@ -92,42 +75,74 @@ func main() {
 		"France Ligue 1",
 		"Brazil Brazilian League",
 		"Mexico Liga MX",
-		"Europe Champions League", // Añadida Champions que tenías en el YAML
+		"Europe Champions League",
+	}
+
+	for _, liga := range ligas {
+		logIfUnexpectedErr("BTTS 1H "+liga,
+			predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_1H_Overall_%s.csv", liga)), "1H"))
+		logIfUnexpectedErr("BTTS 2H "+liga,
+			predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_2H_Overall_%s.csv", liga)), "2H"))
+
+		logIfUnexpectedErr("xG "+liga,
+			predictor.LoadXGSeparatedData(
+				filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Home_%s.csv", liga)),
+				filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Away_%s.csv", liga)),
+			))
+
+		logIfUnexpectedErr("WDL Home "+liga,
+			predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Home_%s.csv", liga)), "home"))
+		logIfUnexpectedErr("WDL Away "+liga,
+			predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Away_%s.csv", liga)), "away"))
+
+		logIfUnexpectedErr("Corners Home "+liga,
+			predictor.LoadCornersData(filepath.Join(dataDir, fmt.Sprintf("team_Corners_FT_Home_%s.csv", liga)), "home"))
+		logIfUnexpectedErr("Corners Away "+liga,
+			predictor.LoadCornersData(filepath.Join(dataDir, fmt.Sprintf("team_Corners_FT_Away_%s.csv", liga)), "away"))
+	}
+}
+
+func main() {
+	dataDir := resolveDataDir()
+
+	if runtime.GOOS == "android" && !hasStoragePermission {
+		log.Println("⚠️ Intentando abrir ajustes de almacenamiento en Android...")
+		cmd := exec.Command(
+			"am", "start",
+			"-a", "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION",
+			"-d", "package:com.futcor.predictor",
+		)
+		if err := cmd.Run(); err != nil {
+			log.Printf("⚠️ No se pudo abrir ajustes vía am: %v", err)
+		}
+	}
+
+	predictor := models.NewPredictor()
+
+	fmt.Println("🚀 Iniciando Futbol Predictor...")
+	fmt.Println("📂 Usando directorio de datos:", dataDir)
+
+	if err := predictor.LoadTeamsFromCSV(filepath.Join(dataDir, "equipos.csv")); err != nil {
+		log.Printf("⚠️ Advertencia: No se pudieron cargar los equipos: %v", err)
+		log.Println("📋 Usando datos de ejemplo...")
+		createSampleData(predictor)
+	} else {
+		fmt.Printf("✅ %d equipos cargados\n", len(predictor.Teams))
 	}
 
 	fmt.Println("📈 Cargando estadísticas de ligas...")
-
-	for _, liga := range ligas {
-		predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_1H_Overall_%s.csv", liga)), "1H")
-		predictor.LoadBTTSData(filepath.Join(dataDir, fmt.Sprintf("team_BTTS_2H_Overall_%s.csv", liga)), "2H")
-
-		predictor.LoadXGSeparatedData(
-			filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Home_%s.csv", liga)),
-			filepath.Join(dataDir, fmt.Sprintf("team_xG_FT_Away_%s.csv", liga)),
-		)
-
-		predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Home_%s.csv", liga)), "home")
-		predictor.LoadWDLData(filepath.Join(dataDir, fmt.Sprintf("team_WDL_FT_Away_%s.csv", liga)), "away")
-		
-		// CORRECCIÓN: Cargar córners de TODAS las ligas, no solo LaLiga
-		predictor.LoadCornersData(filepath.Join(dataDir, fmt.Sprintf("team_Corners_FT_Home_%s.csv", liga)), "home")
-		predictor.LoadCornersData(filepath.Join(dataDir, fmt.Sprintf("team_Corners_FT_Away_%s.csv", liga)), "away")
-	}
+	loadAllStats(predictor, dataDir)
 
 	fmt.Println("✨ Iniciando interfaz gráfica...")
 	time.Sleep(300 * time.Millisecond)
 
-	// 5. Pasar dataDir y el estado del permiso a la UI
 	fyneUI := ui.NewFyneUI(predictor, dataDir)
-	
-	// Si no hay permiso, mostraremos un diálogo en la UI (necesitamos añadir esta función a fut_fyne.go)
 	if runtime.GOOS == "android" && !hasStoragePermission {
 		fyneUI.MostrarAlertaPermiso = true
 	}
-	
 	fyneUI.Run()
 }
 
 func createSampleData(predictor *models.Predictor) {
-	// ... (Mantén tu código de createSampleData igual)
+	// Asegúrate de tener aquí tus equipos base si equipos.csv no existe aún
 }
