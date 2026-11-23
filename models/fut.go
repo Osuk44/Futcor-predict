@@ -524,18 +524,19 @@ func (p *Predictor) LoadTeamsFromCSV(filename string) error {
 	return nil
 }
 
-// CalculateCornerExpectation calcula corners esperados ajustando por estilo, defensa rival y fortaleza
+// CalculateCornerExpectation calcula corners esperados cruzando ataque y defensa rival (estilo Dixon-Coles)
 func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPrediction {
 	if home == nil || away == nil {
 		return &CornerPrediction{Distribution: make(map[int]float64)}
 	}
 
+	// Factor de estilo centrado en 1.0 para no inflar promedios que ya reflejan el estilo del equipo
 	getStyleFactor := func(style string) float64 {
 		factors := map[string]float64{
-			"BANDA":    1.3,
-			"MIXTO":    1.1,
-			"CENTRO":   0.9,
-			"WINGPLAY": 1.25,
+			"BANDA":    1.06,
+			"WINGPLAY": 1.05,
+			"MIXTO":    1.00,
+			"CENTRO":   0.94,
 		}
 		if val, ok := factors[strings.ToUpper(strings.TrimSpace(style))]; ok {
 			return val
@@ -546,13 +547,10 @@ func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPredicti
 	homeStyleFactor := getStyleFactor(home.Style)
 	awayStyleFactor := getStyleFactor(away.Style)
 
-	strengthFactor := 1.0 + (home.PowerRating-away.PowerRating)/100.0
-	if strengthFactor < 0.25 {
-		strengthFactor = 0.25
-	}
+	strengthFactor := clampFloat(1.0+(home.PowerRating-away.PowerRating)/150.0, 0.82, 1.22)
 
 	// Base ofensiva (preferir datos local/visitante de Footiqo si existen)
-	homeTaken := home.AvgCornersFor * 1.1
+	homeTaken := home.AvgCornersFor * 1.05
 	if home.HomeCorners != nil && home.HomeCorners.AvgCornersTaken > 0 {
 		homeTaken = home.HomeCorners.AvgCornersTaken
 	}
@@ -566,15 +564,16 @@ func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPredicti
 	if away.AwayCorners != nil && away.AwayCorners.AvgCornersConceded > 0 {
 		awayConceded = away.AwayCorners.AvgCornersConceded
 	}
-	homeConceded := home.AvgCornersAgainst * 1.1
+	homeConceded := home.AvgCornersAgainst * 1.05
 	if home.HomeCorners != nil && home.HomeCorners.AvgCornersConceded > 0 {
 		homeConceded = home.HomeCorners.AvgCornersConceded
 	}
 
+	// Cruce equilibrado 50/50 entre ataque propio y concesión del rival
 	homeExpected := homeTaken
 	if awayConceded > 0 {
 		if homeTaken > 0 {
-			homeExpected = 0.6*homeTaken + 0.4*awayConceded
+			homeExpected = 0.5*homeTaken + 0.5*awayConceded
 		} else {
 			homeExpected = awayConceded
 		}
@@ -583,7 +582,7 @@ func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPredicti
 	awayExpected := awayTaken
 	if homeConceded > 0 {
 		if awayTaken > 0 {
-			awayExpected = 0.6*awayTaken + 0.4*homeConceded
+			awayExpected = 0.5*awayTaken + 0.5*homeConceded
 		} else {
 			awayExpected = homeConceded
 		}
@@ -613,7 +612,7 @@ func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPredicti
 			}
 			return t.CornerVariance
 		}
-		return expected * 1.5
+		return expected * 1.75
 	}
 
 	homeVar := calcCornerVar(home, homeExpected)
