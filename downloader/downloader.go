@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"futcor_predict/models"
 	"io"
 	"math/rand"
 	"net/http"
@@ -30,7 +31,7 @@ type TableConfig struct {
 	Referer            string `yaml:"referer"`
 	Category           string `yaml:"category"`
 	League             string `yaml:"league"`
-	FilterCountry      string `yaml:"filter_country"`       // Opcional: filtra col[2] (Country) para desambiguar ligas homónimas (ej. Serie A Italia vs Brasil)
+	FilterCountry      string `yaml:"filter_country"` // Opcional: filtra col[2] (Country) para desambiguar ligas homónimas (ej. Serie A Italia vs Brasil)
 	FilterLeague       string `yaml:"filter_league"`
 	FilterLeagueColumn *int   `yaml:"filter_league_column"` // Índice de columna donde vive la liga. nil = default 2
 	KeepColumns        []int  `yaml:"keep_columns"`
@@ -405,16 +406,19 @@ func DescargarTodo(outDir string) error {
 	}
 
 	if exitos == 0 {
-		if errores403 > 0 {
-			return fmt.Errorf("fallaron todas las descargas (%d con HTTP 403, último: %s). Último error: %v",
-				errores403, ultimo403, ultimoError)
-		}
 		return fmt.Errorf("fallaron todas las descargas. Último error: %v", ultimoError)
 	}
+
+	if syncErr := models.SyncEquiposCSV(outDir); syncErr != nil {
+		fmt.Printf("  ⚠️  Error sincronizando equipos.csv: %v\n", syncErr)
+	} else {
+		fmt.Println("  ✅ equipos.csv actualizado automáticamente")
+	}
+
 	if errores > 0 {
+		// Si hubo errores 403, los reportamos para saber que fue el WAF/Cloudflare
 		if errores403 > 0 {
-			return fmt.Errorf("descarga parcial: %d exitosas, %d fallidas (%d con HTTP 403 en %s). Último error: %v",
-				exitos, errores, errores403, ultimo403, ultimoError)
+			return fmt.Errorf("descarga parcial: %d exitosas, %d fallidas. Hubo %d bloqueos 403 (WAF) en: %s", exitos, errores, errores403, ultimo403)
 		}
 		return fmt.Errorf("descarga parcial: %d exitosas, %d fallidas (Último error: %v)", exitos, errores, ultimoError)
 	}

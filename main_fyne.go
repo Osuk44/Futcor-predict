@@ -122,16 +122,19 @@ func main() {
 	fmt.Println("🚀 Iniciando Futbol Predictor...")
 	fmt.Println("📂 Usando directorio de datos:", dataDir)
 
-	if err := predictor.LoadTeamsFromCSV(filepath.Join(dataDir, "equipos.csv")); err != nil {
+	if err := models.SyncEquiposCSV(dataDir); err != nil {
+		log.Printf("⚠️ Advertencia sincronizando equipos.csv: %v", err)
+	}
+
+	fmt.Println("📈 Cargando equipos y estadísticas de ligas...")
+	if err := predictor.ReloadFromDataDir(dataDir); err != nil {
 		log.Printf("⚠️ Advertencia: No se pudieron cargar los equipos: %v", err)
 		log.Println("📋 Usando datos de ejemplo...")
 		createSampleData(predictor)
+		loadAllStats(predictor, dataDir)
 	} else {
-		fmt.Printf("✅ %d equipos cargados\n", len(predictor.Teams))
+		fmt.Printf("✅ %d equipos cargados con estadísticas actualizadas\n", len(predictor.Teams))
 	}
-
-	fmt.Println("📈 Cargando estadísticas de ligas...")
-	loadAllStats(predictor, dataDir)
 
 	fmt.Println("✨ Iniciando interfaz gráfica...")
 	time.Sleep(300 * time.Millisecond)

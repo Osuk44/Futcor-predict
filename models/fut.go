@@ -181,6 +181,19 @@ func parsePercentProportion(s string) (float64, error) {
 	return prop, nil
 }
 
+// parseFlexibleProportion acepta tanto proporción (0.68) como porcentaje (68 o 68%)
+func parseFlexibleProportion(s string) (float64, error) {
+	raw := strings.TrimSpace(s)
+	val, err := parseCleanFloat(raw)
+	if err != nil {
+		return 0, err
+	}
+	if strings.Contains(raw, "%") || val > 1.0 {
+		val /= 100.0
+	}
+	return clampFloat(val, 0, 1), nil
+}
+
 func parseCleanInt(s string) (int, error) {
 	cleaned := strings.TrimSpace(s)
 	if cleaned == "" || cleaned == "-" {
@@ -306,7 +319,7 @@ func clampFloat(val, minVal, maxVal float64) float64 {
 	return val
 }
 
-// LoadTeamsFromCSV carga equipos desde archivo CSV
+// LoadTeamsFromCSV carga equipos desde archivo CSV (soporta 13 o 14 columnas y detección por cabecera)
 func (p *Predictor) LoadTeamsFromCSV(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -320,6 +333,12 @@ func (p *Predictor) LoadTeamsFromCSV(filename string) error {
 	if err != nil {
 		return err
 	}
+	if len(records) == 0 {
+		return nil
+	}
+
+	headers := mapHeaders(records[0])
+	headerCount := len(records[0])
 
 	loadedCount := 0
 	skippedCount := 0
@@ -335,89 +354,145 @@ func (p *Predictor) LoadTeamsFromCSV(filename string) error {
 			continue
 		}
 
-		id := strings.TrimSpace(record[0])
-		name := strings.TrimSpace(record[1])
-		league := strings.TrimSpace(record[2])
+		aligned := len(record) == headerCount
+		idxOr := func(defaultIdx int, keys ...string) int {
+			if aligned {
+				if idx, ok := lookupHeader(headers, keys...); ok {
+					return idx
+				}
+			}
+			return defaultIdx
+		}
+
+		idIdx := idxOr(0, "id")
+		nameIdx := idxOr(1, "nombre", "name", "team", "equipo")
+		leagueIdx := idxOr(2, "liga", "league")
+		powerIdx := idxOr(3, "powerrating", "power rating")
+		gaxIdx := idxOr(4, "gax")
+		gsaxIdx := idxOr(5, "gsax")
+		styleIdx := idxOr(6, "estilo", "style")
+		cornersForIdx := idxOr(7, "avgcornersfor", "avg corners for")
+		cornersAgIdx := idxOr(8, "avgcornersagainst", "avg corners against")
+		bttsIdx := idxOr(9, "bttsrate", "btts rate")
+		gfIdx := idxOr(10, "goalsforavg", "goals for avg")
+		gaIdx := idxOr(11, "goalsagainstavg", "goals against avg")
+
+		id := strings.TrimSpace(record[idIdx])
+		name := strings.TrimSpace(record[nameIdx])
+		league := strings.TrimSpace(record[leagueIdx])
 		if id == "" || name == "" {
 			fmt.Printf("⚠️ Fila %d saltada: ID o nombre vacío\n", i+1)
 			skippedCount++
 			continue
 		}
 
-		powerRating, err := parseCleanFloat(record[3])
+		powerRating, err := parseCleanFloat(record[powerIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: PowerRating inválido (%s)\n", i+1, record[3])
+			fmt.Printf("⚠️ Fila %d saltada: PowerRating inválido (%s)\n", i+1, record[powerIdx])
 			skippedCount++
 			continue
 		}
 
-		gax, err := parseCleanFloat(record[4])
+		gax, err := parseCleanFloat(record[gaxIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: GAx inválido (%s)\n", i+1, record[4])
+			fmt.Printf("⚠️ Fila %d saltada: GAx inválido (%s)\n", i+1, record[gaxIdx])
 			skippedCount++
 			continue
 		}
 
-		gsax, err := parseCleanFloat(record[5])
+		gsax, err := parseCleanFloat(record[gsaxIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: GSAx inválido (%s)\n", i+1, record[5])
+			fmt.Printf("⚠️ Fila %d saltada: GSAx inválido (%s)\n", i+1, record[gsaxIdx])
 			skippedCount++
 			continue
 		}
 
-		style := strings.ToUpper(strings.TrimSpace(record[6]))
+		style := strings.ToUpper(strings.TrimSpace(record[styleIdx]))
 
-		avgCornersFor, err := parseCleanFloat(record[7])
+		avgCornersFor, err := parseCleanFloat(record[cornersForIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: AvgCornersFor inválido (%s)\n", i+1, record[7])
+			fmt.Printf("⚠️ Fila %d saltada: AvgCornersFor inválido (%s)\n", i+1, record[cornersForIdx])
 			skippedCount++
 			continue
 		}
 
-		avgCornersAgainst, err := parseCleanFloat(record[8])
+		avgCornersAgainst, err := parseCleanFloat(record[cornersAgIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: AvgCornersAgainst inválido (%s)\n", i+1, record[8])
+			fmt.Printf("⚠️ Fila %d saltada: AvgCornersAgainst inválido (%s)\n", i+1, record[cornersAgIdx])
 			skippedCount++
 			continue
 		}
 
-		bttsRateProp, err := parsePercentProportion(record[9])
+		bttsRateProp, err := parseFlexibleProportion(record[bttsIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: BTTSRate inválido (%s)\n", i+1, record[9])
+			fmt.Printf("⚠️ Fila %d saltada: BTTSRate inválido (%s)\n", i+1, record[bttsIdx])
 			skippedCount++
 			continue
 		}
 
-		goalsForAvg, err := parseCleanFloat(record[10])
+		goalsForAvg, err := parseCleanFloat(record[gfIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: GoalsForAvg inválido (%s)\n", i+1, record[10])
+			fmt.Printf("⚠️ Fila %d saltada: GoalsForAvg inválido (%s)\n", i+1, record[gfIdx])
 			skippedCount++
 			continue
 		}
 
-		goalsAgainstAvg, err := parseCleanFloat(record[11])
+		goalsAgainstAvg, err := parseCleanFloat(record[gaIdx])
 		if err != nil {
-			fmt.Printf("⚠️ Fila %d saltada: GoalsAgainstAvg inválido (%s)\n", i+1, record[11])
+			fmt.Printf("⚠️ Fila %d saltada: GoalsAgainstAvg inválido (%s)\n", i+1, record[gaIdx])
 			skippedCount++
 			continue
 		}
 
+		// Columnas opcionales (CornerVariance y Competition) en formatos de 13 o 14 columnas
 		var cornerVariance float64
-		if len(record) > 12 {
-			if cv, err := parseCleanFloat(record[12]); err == nil && cv > 0 {
+		competition := ""
+
+		cvIdx := -1
+		compIdx := -1
+		if aligned {
+			if idx, ok := lookupHeader(headers, "cornervariance", "corner variance"); ok {
+				cvIdx = idx
+			}
+			if idx, ok := lookupHeader(headers, "competition", "competicion"); ok {
+				compIdx = idx
+			}
+		}
+
+		if cvIdx >= 0 && cvIdx < len(record) {
+			if cv, err := parseCleanFloat(record[cvIdx]); err == nil && cv > 0 {
 				cornerVariance = cv
 			}
 		}
+		if compIdx >= 0 && compIdx < len(record) {
+			competition = strings.TrimSpace(record[compIdx])
+		}
+
+		// Fallback posicional si la cabecera no identificó las columnas opcionales
+		if cvIdx < 0 && compIdx < 0 {
+			if len(record) == 13 {
+				if cv, err := parseCleanFloat(record[12]); err == nil && cv > 0 {
+					cornerVariance = cv
+				} else {
+					competition = strings.TrimSpace(record[12])
+				}
+			} else if len(record) >= 14 {
+				if cv, err := parseCleanFloat(record[12]); err == nil && cv > 0 {
+					cornerVariance = cv
+				}
+				competition = strings.TrimSpace(record[13])
+			}
+		}
+
 		if cornerVariance <= 0 && avgCornersFor > 0 {
 			cornerVariance = avgCornersFor * 1.5
 		}
-
-		competition := ""
-		if len(record) > 13 {
-			competition = strings.TrimSpace(record[13])
-		}
 		if competition == "" && isChampionsCompetition(league, "") {
 			competition = "Champions"
+		}
+
+		if prev, exists := p.Teams[id]; exists {
+			fmt.Printf("⚠️ ID duplicado %q en fila %d: %q sobrescribe a %q\n", id, i+1, name, prev.Name)
 		}
 
 		team := &Team{
@@ -526,15 +601,23 @@ func (p *Predictor) CalculateCornerExpectation(home, away *Team) *CornerPredicti
 
 	totalExpected := homeExpected + awayExpected
 
-	// Varianzas con fallback coherente sobre la expectativa real cuando CornerVariance <= 0
-	homeVar := home.CornerVariance
-	if homeVar <= 0 {
-		homeVar = homeExpected * 1.5
+	// Varianzas escaladas manteniendo el índice de dispersión (Fano = Var / Media)
+	calcCornerVar := func(t *Team, expected float64) float64 {
+		if expected <= 0 {
+			return 0
+		}
+		if t.CornerVariance > 0 {
+			if t.AvgCornersFor > 0 {
+				fano := clampFloat(t.CornerVariance/t.AvgCornersFor, 1.05, 4.0)
+				return expected * fano
+			}
+			return t.CornerVariance
+		}
+		return expected * 1.5
 	}
-	awayVar := away.CornerVariance
-	if awayVar <= 0 {
-		awayVar = awayExpected * 1.5
-	}
+
+	homeVar := calcCornerVar(home, homeExpected)
+	awayVar := calcCornerVar(away, awayExpected)
 	totalVariance := homeVar + awayVar
 	if totalVariance < 0 {
 		totalVariance = 0
