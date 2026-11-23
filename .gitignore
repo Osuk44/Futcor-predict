@@ -27,3 +27,6 @@ build/
 *.bak
 *.log
 .DS_Store
+
+# --- Tests locales ---
+*_test.go
