@@ -125,12 +125,14 @@ type HandicapPrediction struct {
 
 // OutcomePrediction contiene las probabilidades para 1X2 y las cuotas justas
 type OutcomePrediction struct {
-	HomeWinProb float64
-	DrawProb    float64
-	AwayWinProb float64
-	HomeOdds    float64
-	DrawOdds    float64
-	AwayOdds    float64
+	HomeWinProb       float64
+	DrawProb          float64
+	AwayWinProb       float64
+	HomeOdds          float64
+	DrawOdds          float64
+	AwayOdds          float64
+	HomeExpectedGoals float64
+	AwayExpectedGoals float64
 }
 
 // Predictor modelo principal
@@ -863,12 +865,14 @@ func (p *Predictor) PredictOutcome(home, away *Team) *OutcomePrediction {
 	awayWin /= normSum
 
 	return &OutcomePrediction{
-		HomeWinProb: homeWin,
-		DrawProb:    draw,
-		AwayWinProb: awayWin,
-		HomeOdds:    1.0 / homeWin,
-		DrawOdds:    1.0 / draw,
-		AwayOdds:    1.0 / awayWin,
+		HomeWinProb:       homeWin,
+		DrawProb:          draw,
+		AwayWinProb:       awayWin,
+		HomeOdds:          1.0 / homeWin,
+		DrawOdds:          1.0 / draw,
+		AwayOdds:          1.0 / awayWin,
+		HomeExpectedGoals: homeExpected,
+		AwayExpectedGoals: awayExpected,
 	}
 }
 

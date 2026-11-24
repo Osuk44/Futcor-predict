@@ -3,7 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
-    "futcor_predict/downloader"
+	"futcor_predict/downloader"
 	"futcor_predict/models"
 	"strconv"
 	"strings"
@@ -36,11 +36,11 @@ type TeamSelector struct {
 }
 
 type FyneUI struct {
-	Predictor *models.Predictor
-	Window    fyne.Window
-	App       fyne.App
-	DataDir   string
-    MostrarAlertaPermiso   bool 
+	Predictor            *models.Predictor
+	Window               fyne.Window
+	App                  fyne.App
+	DataDir              string
+	MostrarAlertaPermiso bool
 
 	homeSelector *TeamSelector
 	awaySelector *TeamSelector
@@ -99,17 +99,17 @@ func (f *FyneUI) Run() {
 	f.Window.SetContent(f.buildMainUI())
 	// Comprobar si debemos mostrar el diálogo de permisoiso
 	if f.MostrarAlertaPermiso {
-	// Creamos el mensaje e
-	mensaje := widget.NewLabel("Para descargar los datos de fútbol, ve a Ajustes > Aplicaciones > Futcor Predict > Permisos y activa 'Acceso a todos los archivos'.")
-	mensaje.Wrapping = fyne.TextWrapWord
-	
-	dialog.ShowCustom("⚠️ Permiso Requerido", "Entendido", 
-		container.NewVBox(
-			mensaje,
-			widget.NewLabel("\nLuego reinicia la app."), 
-		), 
-		f.Window)
- }
+		// Creamos el mensaje e
+		mensaje := widget.NewLabel("Para descargar los datos de fútbol, ve a Ajustes > Aplicaciones > Futcor Predict > Permisos y activa 'Acceso a todos los archivos'.")
+		mensaje.Wrapping = fyne.TextWrapWord
+
+		dialog.ShowCustom("⚠️ Permiso Requerido", "Entendido",
+			container.NewVBox(
+				mensaje,
+				widget.NewLabel("\nLuego reinicia la app."),
+			),
+			f.Window)
+	}
 	f.Window.ShowAndRun()
 }
 
@@ -171,29 +171,28 @@ func (f *FyneUI) buildHeaderCard() fyne.CanvasObject {
 		),
 	)
 
+	importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
+		// 1. Mostrar diálogo de "Descargando..."
+		progress := dialog.NewCustomWithoutButtons("Descargando...",
+			widget.NewLabel("Obteniendo datos de Footiqo...\nEsto puede tardar un minuto."), f.Window)
+		progress.Show()
 
-  importBtn := widget.NewButtonWithIcon("Actualizar Data", theme.DownloadIcon(), func() {
-	// 1. Mostrar diálogo de "Descargando..."
-	progress := dialog.NewCustomWithoutButtons("Descargando...", 
-		widget.NewLabel("Obteniendo datos de Footiqo...\nEsto puede tardar un minuto."), f.Window)
-	progress.Show()
+		// 2. Ejecutar en un hilo aparte
+		go func() {
+			// Aquí llamamos a tu paquete
+			err := downloader.DescargarTodo(f.DataDir)
 
-	// 2. Ejecutar en un hilo aparte
-    	go func() {
-		// Aquí llamamos a tu paquete
-	    	err := downloader.DescargarTodo(f.DataDir)
-		
-		// 3. Actualizar la UI desde el hilo principal
-	       	fyne.Do(func() {
-		    	progress.Hide()
-		    	if err != nil {
-				dialog.ShowError(fmt.Errorf("Error en descarga: %v", err), f.Window)
-		    	} else {
-			    	dialog.ShowInformation("¡Éxito!", "Datos actualizados correctamente.\n\n(Reinicia la app para cargar los nuevos datos)", f.Window)
-	     		}
-	    	})
-    	}()
-    })
+			// 3. Actualizar la UI desde el hilo principal
+			fyne.Do(func() {
+				progress.Hide()
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("Error en descarga: %v", err), f.Window)
+				} else {
+					dialog.ShowInformation("¡Éxito!", "Datos actualizados correctamente.\n\n(Reinicia la app para cargar los nuevos datos)", f.Window)
+				}
+			})
+		}()
+	})
 
 	titleLabel := widget.NewLabelWithStyle("PARTIDO", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	titleWithIcon := container.NewHBox(widget.NewIcon(theme.SearchIcon()), titleLabel)
@@ -526,7 +525,6 @@ func (f *FyneUI) updateOutcomeAsync() {
 	}
 	go func() {
 		outcome := f.Predictor.PredictOutcome(home, away)
-		homeXG, awayXG := calculateExpectedGoalsForDisplay(home, away)
 		fyne.Do(func() {
 			f.homeWinText.Text = fmt.Sprintf("%.1f%%", outcome.HomeWinProb*100)
 			f.drawText.Text = fmt.Sprintf("%.1f%%", outcome.DrawProb*100)
@@ -539,8 +537,8 @@ func (f *FyneUI) updateOutcomeAsync() {
 			f.drawOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.DrawOdds))
 			f.awayOdds.SetText(fmt.Sprintf("Cuota\n%.2f", outcome.AwayOdds))
 
-			f.homeXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", home.Name, homeXG))
-			f.awayXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", away.Name, awayXG))
+			f.homeXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", home.Name, outcome.HomeExpectedGoals))
+			f.awayXGLabel.SetText(fmt.Sprintf("%s\n%.2f xG", away.Name, outcome.AwayExpectedGoals))
 		})
 	}()
 }
@@ -603,79 +601,4 @@ func (f *FyneUI) updateHandicapAsync(h float64) {
 			f.handicapResult.SetText(fmt.Sprintf("Local cubre: %.1f%%\nVisitante cubre: %.1f%%\nDiferencia: %.2f", pred.HomeProb*100, pred.AwayProb*100, pred.ExpectedValue))
 		})
 	}()
-}
-
-// calculateExpectedGoalsForDisplay calcula los xG esperados para mostrar en la pestaña 1X2
-// usando únicamente campos exportados de models.Team sin alterar models/fut.go.
-func calculateExpectedGoalsForDisplay(home, away *models.Team) (float64, float64) {
-	homeXGFor := home.XGForHome
-	homeXGAgainst := home.XGAgainstHome
-	homeFinDelta := home.FinishingDeltaHome
-
-	awayXGFor := away.XGForAway
-	awayXGAgainst := away.XGAgainstAway
-	awayFinDelta := away.FinishingDeltaAway
-
-	if homeXGFor == 0 {
-		homeXGFor = home.GoalsForAvg * 0.85
-	}
-	if awayXGFor == 0 {
-		awayXGFor = away.GoalsForAvg * 0.85
-	}
-	if homeXGAgainst == 0 {
-		homeXGAgainst = home.GoalsAgainstAvg * 0.85
-	}
-	if awayXGAgainst == 0 {
-		awayXGAgainst = away.GoalsAgainstAvg * 0.85
-	}
-
-	isChampions := home.Competition == "Champions" && away.Competition == "Champions"
-	homeLocalFactor := 1.1
-	awayAwayFactor := 0.95
-	if isChampions {
-		homeLocalFactor = 1.05
-		awayAwayFactor = 0.98
-		homeXGFor *= 1.08
-		awayXGFor *= 1.08
-	}
-
-	avgXG := 1.35
-	if home.Competition == "Champions" {
-		avgXG = 1.50
-	} else {
-		leagueAvg := map[string]float64{
-			"LaLiga":           1.35,
-			"Premier League":   1.45,
-			"Bundesliga":       1.40,
-			"Serie A":          1.30,
-			"Ligue 1":          1.25,
-			"Champions League": 1.50,
-		}
-		if val, ok := leagueAvg[home.League]; ok {
-			avgXG = val
-		}
-	}
-
-	homeDefQuality := homeXGAgainst / avgXG
-	awayDefQuality := awayXGAgainst / avgXG
-
-	homeOffEfficiency := 1.0
-	if homeFinDelta > 0.3 {
-		homeOffEfficiency = 0.95
-	} else if homeFinDelta < -0.3 {
-		homeOffEfficiency = 1.05
-	}
-	awayOffEfficiency := 1.0
-	if awayFinDelta > 0.3 {
-		awayOffEfficiency = 0.95
-	} else if awayFinDelta < -0.3 {
-		awayOffEfficiency = 1.05
-	}
-
-	strengthFactor := 1.0 + (home.PowerRating-away.PowerRating)/200
-
-	homeExpected := homeXGFor * homeOffEfficiency * strengthFactor * homeLocalFactor * awayDefQuality
-	awayExpected := awayXGFor * awayOffEfficiency * (1 / strengthFactor) * awayAwayFactor * homeDefQuality
-
-	return homeExpected, awayExpected
 }
