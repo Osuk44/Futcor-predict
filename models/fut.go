@@ -872,34 +872,80 @@ func (p *Predictor) PredictOutcome(home, away *Team) *OutcomePrediction {
 	}
 }
 
-// getExpectedGoals calcula los goles esperados para local y visitante
+// getExpectedGoals calcula los goles esperados para local y visitante (Dixon-Coles + splits Home/Away)
 func (p *Predictor) getExpectedGoals(home, away *Team) (float64, float64) {
+	if home == nil || away == nil {
+		return 0, 0
+	}
+
 	homeXGFor, homeXGAgainst, homeFinDelta, _ := p.getXGForMatch(home, true)
 	awayXGFor, awayXGAgainst, awayFinDelta, _ := p.getXGForMatch(away, false)
 
-	if homeXGFor == 0 {
-		homeXGFor = home.GoalsForAvg * 0.85
+	hasHomeOffXG := homeXGFor > 0
+	hasAwayOffXG := awayXGFor > 0
+
+	// Fallback sin el multiplicador 0.85 espurio: priorizar GAx/GSAx y luego promedio real de goles
+	if homeXGFor <= 0 {
+		if home.GAx > 0 {
+			homeXGFor = home.GAx
+		} else {
+			homeXGFor = home.GoalsForAvg
+		}
 	}
-	if awayXGFor == 0 {
-		awayXGFor = away.GoalsForAvg * 0.85
+	if awayXGFor <= 0 {
+		if away.GAx > 0 {
+			awayXGFor = away.GAx
+		} else {
+			awayXGFor = away.GoalsForAvg
+		}
 	}
-	if homeXGAgainst == 0 {
-		homeXGAgainst = home.GoalsAgainstAvg * 0.85
+	if homeXGAgainst <= 0 {
+		if home.GSAx > 0 {
+			homeXGAgainst = home.GSAx
+		} else {
+			homeXGAgainst = home.GoalsAgainstAvg
+		}
 	}
-	if awayXGAgainst == 0 {
-		awayXGAgainst = away.GoalsAgainstAvg * 0.85
+	if awayXGAgainst <= 0 {
+		if away.GSAx > 0 {
+			awayXGAgainst = away.GSAx
+		} else {
+			awayXGAgainst = away.GoalsAgainstAvg
+		}
+	}
+
+	if homeXGFor <= 0 && awayXGFor <= 0 {
+		return 0, 0
 	}
 
 	isChampions := isChampionsCompetition(home.League, home.Competition) &&
 		isChampionsCompetition(away.League, away.Competition)
 
-	homeLocalFactor := 1.1
-	awayAwayFactor := 0.95
+	// Aplicar factor de localia/visita solo cuando no hay xG ya separado por Home/Away (evita doble conteo)
+	homeLocalFactor := 1.0
+	awayAwayFactor := 1.0
+	if !hasHomeOffXG {
+		if isChampions {
+			homeLocalFactor = 1.08
+		} else {
+			homeLocalFactor = 1.14
+		}
+	}
+	if !hasAwayOffXG {
+		if isChampions {
+			awayAwayFactor = 0.94
+		} else {
+			awayAwayFactor = 0.88
+		}
+	}
+
 	if isChampions {
-		homeLocalFactor = 1.05
-		awayAwayFactor = 0.98
-		homeXGFor *= 1.08
-		awayXGFor *= 1.08
+		if !hasHomeOffXG {
+			homeXGFor *= 1.06
+		}
+		if !hasAwayOffXG {
+			awayXGFor *= 1.06
+		}
 	}
 
 	avgXGHomeLeague := p.getAvgXG(home.League, home.Competition)
@@ -912,13 +958,13 @@ func (p *Predictor) getExpectedGoals(home, away *Team) (float64, float64) {
 		avgXG = 1.35
 	}
 
-	homeDefQuality := homeXGAgainst / avgXG
-	awayDefQuality := awayXGAgainst / avgXG
-	if homeDefQuality <= 0 {
-		homeDefQuality = 1.0
+	homeDefQuality := 1.0
+	if homeXGAgainst > 0 {
+		homeDefQuality = clampFloat(homeXGAgainst/avgXG, 0.60, 1.65)
 	}
-	if awayDefQuality <= 0 {
-		awayDefQuality = 1.0
+	awayDefQuality := 1.0
+	if awayXGAgainst > 0 {
+		awayDefQuality = clampFloat(awayXGAgainst/avgXG, 0.60, 1.65)
 	}
 
 	homeOffEfficiency := 1.0
@@ -934,20 +980,26 @@ func (p *Predictor) getExpectedGoals(home, away *Team) (float64, float64) {
 		awayOffEfficiency = 1.05
 	}
 
-	strengthFactor := 1.0 + (home.PowerRating-away.PowerRating)/200.0
-	if strengthFactor < 0.25 {
-		strengthFactor = 0.25
-	}
+	prFactor := clampFloat(1.0+(home.PowerRating-away.PowerRating)/220.0, 0.85, 1.18)
 
-	homeExpected := homeXGFor * homeOffEfficiency * strengthFactor * homeLocalFactor * awayDefQuality
-	awayExpected := awayXGFor * awayOffEfficiency * (1.0 / strengthFactor) * awayAwayFactor * homeDefQuality
+	// Combinar PowerRating con rendimiento real Local/Visitante (WDL de Footiqo)
+	strengthFactor := prFactor
+	homeSum := home.WinHome + home.DrawHome + home.LossHome
+	awaySum := away.WinAway + away.DrawAway + away.LossAway
+	if homeSum > 0 && awaySum > 0 {
+		homePPG := (3.0*home.WinHome + home.DrawHome) / homeSum
+		awayPPG := (3.0*away.WinAway + away.DrawAway) / awaySum
+		wdlFactor := clampFloat(1.0+(homePPG-awayPPG)/10.0, 0.82, 1.22)
+		if hasHomeOffXG && hasAwayOffXG {
+			strengthFactor = 0.25*wdlFactor + 0.75*prFactor
+		} else {
+			strengthFactor = 0.65*wdlFactor + 0.35*prFactor
+		}
+	}
+	strengthFactor = clampFloat(strengthFactor, 0.80, 1.25)
 
-	if homeExpected < 0 {
-		homeExpected = 0
-	}
-	if awayExpected < 0 {
-		awayExpected = 0
-	}
+	homeExpected := clampFloat(homeXGFor*homeOffEfficiency*strengthFactor*homeLocalFactor*awayDefQuality, 0.20, 3.50)
+	awayExpected := clampFloat(awayXGFor*awayOffEfficiency*(1.0/strengthFactor)*awayAwayFactor*homeDefQuality, 0.20, 3.50)
 
 	return homeExpected, awayExpected
 }
