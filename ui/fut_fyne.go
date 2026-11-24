@@ -49,10 +49,11 @@ type FyneUI struct {
 	homeExpectedText  *canvas.Text
 	awayExpectedText  *canvas.Text
 	totalExpectedText *canvas.Text
-	over75Label       *widget.Label
-	over85Label       *widget.Label
-	over95Label       *widget.Label
-	over105Label      *widget.Label
+	over75Label       *canvas.Text
+	over85Label       *canvas.Text
+	over95Label       *canvas.Text
+	over105Label      *canvas.Text
+	overHintText      *canvas.Text
 
 	// Labels de 1X2 y xG
 	homeWinText *canvas.Text
@@ -303,10 +304,22 @@ func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
 	f.totalExpectedText.TextStyle = fyne.TextStyle{Bold: true}
 	f.totalExpectedText.Alignment = fyne.TextAlignCenter
 
-	f.over75Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	f.over85Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	f.over95Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	f.over105Label = widget.NewLabelWithStyle("-", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	newOverText := func() *canvas.Text {
+		t := canvas.NewText("-", colorTextPrimary)
+		t.TextSize = 16
+		t.TextStyle = fyne.TextStyle{Bold: true}
+		t.Alignment = fyne.TextAlignCenter
+		return t
+	}
+	f.over75Label = newOverText()
+	f.over85Label = newOverText()
+	f.over95Label = newOverText()
+	f.over105Label = newOverText()
+
+	f.overHintText = canvas.NewText("Selecciona dos equipos para calcular", colorTextPrimary)
+	f.overHintText.TextSize = 13
+	f.overHintText.TextStyle = fyne.TextStyle{Bold: true}
+	f.overHintText.Alignment = fyne.TextAlignCenter
 
 	homeTitle := widget.NewLabelWithStyle("LOCAL", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	homeSub := widget.NewLabelWithStyle("Corners esperados", fyne.TextAlignCenter, fyne.TextStyle{})
@@ -338,15 +351,17 @@ func (f *FyneUI) buildCornersTab() fyne.CanvasObject {
 
 	overTitle := widget.NewLabelWithStyle("PROBABILIDAD OVER", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 	gridProbs := container.NewGridWithColumns(4,
-		container.NewVBox(widget.NewLabelWithStyle("+7.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over75Label),
-		container.NewVBox(widget.NewLabelWithStyle("+8.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over85Label),
-		container.NewVBox(widget.NewLabelWithStyle("+9.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over95Label),
-		container.NewVBox(widget.NewLabelWithStyle("+10.5", fyne.TextAlignCenter, fyne.TextStyle{}), f.over105Label),
+		container.NewVBox(widget.NewLabelWithStyle("+7.5", fyne.TextAlignCenter, fyne.TextStyle{}), container.NewCenter(f.over75Label)),
+		container.NewVBox(widget.NewLabelWithStyle("+8.5", fyne.TextAlignCenter, fyne.TextStyle{}), container.NewCenter(f.over85Label)),
+		container.NewVBox(widget.NewLabelWithStyle("+9.5", fyne.TextAlignCenter, fyne.TextStyle{}), container.NewCenter(f.over95Label)),
+		container.NewVBox(widget.NewLabelWithStyle("+10.5", fyne.TextAlignCenter, fyne.TextStyle{}), container.NewCenter(f.over105Label)),
 	)
 	overCard := widget.NewCard("", "", container.NewPadded(container.NewVBox(
 		overTitle,
 		widget.NewSeparator(),
 		gridProbs,
+		widget.NewSeparator(),
+		container.NewCenter(f.overHintText),
 	)))
 
 	calcBtn := widget.NewButtonWithIcon("Calcular", theme.ViewRefreshIcon(), func() {
@@ -571,10 +586,46 @@ func (f *FyneUI) displayCornersResult(pred *models.CornerPrediction, home, away 
 	f.awayExpectedText.Refresh()
 	f.totalExpectedText.Refresh()
 
-	f.over75Label.SetText(fmt.Sprintf("%.1f%%", pred.Over75*100))
-	f.over85Label.SetText(fmt.Sprintf("%.1f%%", pred.Over85*100))
-	f.over95Label.SetText(fmt.Sprintf("%.1f%%", pred.Over95*100))
-	f.over105Label.SetText(fmt.Sprintf("%.1f%%", pred.Over105*100))
+	setOverStyle := func(lbl *canvas.Text, prob float64) {
+		lbl.Text = fmt.Sprintf("%.1f%%", prob*100)
+		switch {
+		case prob >= 0.80:
+			lbl.Color = colorAccentGreen
+		case prob >= 0.70:
+			lbl.Color = colorAccentGold
+		default:
+			lbl.Color = colorTextPrimary
+		}
+		lbl.Refresh()
+	}
+
+	setOverStyle(f.over75Label, pred.Over75)
+	setOverStyle(f.over85Label, pred.Over85)
+	setOverStyle(f.over95Label, pred.Over95)
+	setOverStyle(f.over105Label, pred.Over105)
+
+	// Mostrar la línea más alta con >= 80% de probabilidad
+	switch {
+	case pred.Over105 >= 0.80:
+		f.overHintText.Text = fmt.Sprintf("✔ Muy probable: +10.5 córners (%.1f%%)", pred.Over105*100)
+		f.overHintText.Color = colorAccentGreen
+	case pred.Over95 >= 0.80:
+		f.overHintText.Text = fmt.Sprintf("✔ Muy probable: +9.5 córners (%.1f%%)", pred.Over95*100)
+		f.overHintText.Color = colorAccentGreen
+	case pred.Over85 >= 0.80:
+		f.overHintText.Text = fmt.Sprintf("✔ Muy probable: +8.5 córners (%.1f%%)", pred.Over85*100)
+		f.overHintText.Color = colorAccentGreen
+	case pred.Over75 >= 0.80:
+		f.overHintText.Text = fmt.Sprintf("✔ Muy probable: +7.5 córners (%.1f%%)", pred.Over75*100)
+		f.overHintText.Color = colorAccentGreen
+	case pred.Over75 >= 0.70:
+		f.overHintText.Text = fmt.Sprintf("Probabilidad moderada: +7.5 córners (%.1f%%)", pred.Over75*100)
+		f.overHintText.Color = colorAccentGold
+	default:
+		f.overHintText.Text = "Sin línea Over de alta confianza (<70%)"
+		f.overHintText.Color = colorTextPrimary
+	}
+	f.overHintText.Refresh()
 }
 
 func (f *FyneUI) updateBTTSAsync() {
